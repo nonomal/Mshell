@@ -193,10 +193,7 @@
       title="编辑文件"
       width="860px"
       append-to-body
-      @closed="
-        searchText = ''
-        replaceText = ''
-      "
+      @closed="handleEditDialogClosed"
       @keydown.ctrl.s.prevent="saveEditedFile"
       @keydown.meta.s.prevent="saveEditedFile"
     >
@@ -605,6 +602,11 @@ const replaceAll = () => {
   const count = (editContent.value.match(regex) || []).length
   editContent.value = editContent.value.replace(regex, replaceText.value)
   ElMessage.success(`已替换 ${count} 处`)
+}
+
+const handleEditDialogClosed = () => {
+  searchText.value = ''
+  replaceText.value = ''
 }
 
 // 权限编辑

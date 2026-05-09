@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/mobile/**/*.ts",
+    "src/mobile/**/*.vue",
+    "src/types/session.ts",
+    "vite.mobile.config.ts",
+    "capacitor.config.ts"
+  ],
+  "exclude": ["electron", "src/App.vue", "src/components", "src/stores", "src/utils"]
+}
