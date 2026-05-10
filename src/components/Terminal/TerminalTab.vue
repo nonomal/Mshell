@@ -7,6 +7,18 @@
       <div class="connection-info">
         <span class="host-name">{{ displayName }}</span>
         <span class="status-text">{{ connectionStatus }}</span>
+        <div v-if="connectionHost" class="connection-host-chip" :title="connectionHost">
+          <span class="connection-host-text">{{ connectionHost }}</span>
+          <el-tooltip content="复制主机地址" placement="bottom">
+            <el-button
+              type="primary"
+              link
+              :icon="CopyDocument"
+              class="copy-host-btn"
+              @click.stop="copyConnectionHost"
+            />
+          </el-tooltip>
+        </div>
       </div>
       <div class="header-actions">
         <!-- 工具栏设置 -->
@@ -474,7 +486,8 @@ import {
   CircleClose,
   FolderOpened,
   Promotion,
-  Setting
+  Setting,
+  CopyDocument
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import TerminalView from './TerminalView.vue'
@@ -760,6 +773,20 @@ const finalCommand = computed(() => {
 const displayName = computed(() => {
   return props.session.name || `${props.session.username}@${props.session.host}`
 })
+
+const connectionHost = computed(() => props.session.host?.trim() || '')
+
+const copyConnectionHost = async () => {
+  if (!connectionHost.value) return
+
+  try {
+    await navigator.clipboard.writeText(connectionHost.value)
+    ElMessage.success(`已复制主机地址: ${connectionHost.value}`)
+  } catch (error) {
+    console.error('Failed to copy connection host:', error)
+    ElMessage.error('复制主机地址失败')
+  }
+}
 
 const statusClass = computed(() => {
   return {
@@ -1937,18 +1964,64 @@ defineExpose({
   align-items: center;
   gap: 8px;
   font-family: 'Inter', sans-serif;
+  min-width: 0;
 }
 
 .host-name {
   font-size: var(--text-sm);
   font-weight: 500;
   color: var(--text-primary);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status-text {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
   text-transform: capitalize;
+  flex-shrink: 0;
+}
+
+.connection-host-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: min(320px, 38vw);
+  height: 22px;
+  padding: 0 3px 0 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  flex-shrink: 1;
+}
+
+.connection-host-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  font-size: var(--text-xs);
+  line-height: 1;
+}
+
+.copy-host-btn {
+  padding: 1px !important;
+  height: 18px !important;
+  width: 18px !important;
+  min-width: 18px !important;
+  border-radius: 3px;
+  color: var(--text-secondary) !important;
+  flex-shrink: 0;
+}
+
+.copy-host-btn:hover {
+  background-color: var(--bg-hover);
+  color: var(--primary-color) !important;
 }
 
 .header-actions {

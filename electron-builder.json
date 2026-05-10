@@ -59,6 +59,7 @@
     "installerIcon": "build/icon.ico",
     "uninstallerIcon": "build/icon.ico",
     "installerHeaderIcon": "build/icon.ico",
+    "runAfterFinish": false,
     "deleteAppDataOnUninstall": false,
     "artifactName": "${productName}-Setup-${version}.${ext}"
   }

@@ -36,6 +36,49 @@ import { updateManager } from './managers/UpdateManager'
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
+const INSTALLER_QUIT_ARG = '--mshell-installer-quit'
+
+const isInstallerQuitRequest = (argv: string[] = process.argv) =>
+  argv.some((arg) => arg === INSTALLER_QUIT_ARG)
+
+const restoreMainWindow = () => {
+  if (!mainWindow) {
+    if (app.isReady()) {
+      createWindow()
+    }
+    return
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore()
+  }
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+const requestAppQuit = () => {
+  isQuitting = true
+  if (tray) {
+    tray.destroy()
+    tray = null
+  }
+  app.quit()
+}
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+
+if (!gotSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', (_event, argv) => {
+    if (isInstallerQuitRequest(argv)) {
+      requestAppQuit()
+      return
+    }
+
+    restoreMainWindow()
+  })
+}
 
 // Register IPC handlers
 registerSSHHandlers()
@@ -301,57 +344,65 @@ function createWindow() {
   })
 }
 
-app.whenReady().then(async () => {
-  crashRecoveryManager.start()
-
-  const crashCheck = crashRecoveryManager.checkForCrash()
-  if (crashCheck.crashed) {
-    logger.logError('system', 'Application crashed on previous run', new Error('Crash detected'))
-  }
-
-  // 初始化备份管理器
-  await backupManager.initialize()
-
-  // 初始化同步管理器
-  await syncManager.initialize()
-
-  // 初始化 AI 管理器
-  await aiManager.initialize()
-
-  // 应用启动时打开设置
-  const settings = appSettingsManager.getSettings()
-  app.setLoginItemSettings({
-    openAtLogin: settings.general.startWithSystem
+if (gotSingleInstanceLock && isInstallerQuitRequest()) {
+  app.whenReady().then(() => {
+    requestAppQuit()
   })
+}
 
-  createWindow()
+if (gotSingleInstanceLock && !isInstallerQuitRequest()) {
+  app.whenReady().then(async () => {
+    crashRecoveryManager.start()
 
-  // 创建托盘图标（应用启动时就创建）
-  createTray()
+    const crashCheck = crashRecoveryManager.checkForCrash()
+    if (crashCheck.crashed) {
+      logger.logError('system', 'Application crashed on previous run', new Error('Crash detected'))
+    }
 
-  // 设置 AI Manager 的主窗口引用
-  if (mainWindow) {
-    aiManager.setMainWindow(mainWindow)
-    
-    // 初始化更新管理器
-    updateManager.init(mainWindow)
-    
-    // 启动时检查更新（如果设置中启用了自动检查）
+    // 初始化备份管理器
+    await backupManager.initialize()
+
+    // 初始化同步管理器
+    await syncManager.initialize()
+
+    // 初始化 AI 管理器
+    await aiManager.initialize()
+
+    // 应用启动时打开设置
     const settings = appSettingsManager.getSettings()
-    if (settings.updates?.autoCheck) {
-      // 延迟检查，等待窗口完全加载
-      setTimeout(() => {
-        updateManager.checkForUpdates()
-      }, 5000)
-    }
-  }
+    app.setLoginItemSettings({
+      openAtLogin: settings.general.startWithSystem
+    })
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
+    createWindow()
+
+    // 创建托盘图标（应用启动时就创建）
+    createTray()
+
+    // 设置 AI Manager 的主窗口引用
+    if (mainWindow) {
+      aiManager.setMainWindow(mainWindow)
+
+      // 初始化更新管理器
+      updateManager.init(mainWindow)
+
+      // 启动时检查更新（如果设置中启用了自动检查）
+      const settings = appSettingsManager.getSettings()
+      if (settings.updates?.autoCheck) {
+        // 延迟检查，等待窗口完全加载
+        setTimeout(() => {
+          updateManager.checkForUpdates()
+        }, 5000)
+      }
     }
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow()
+      }
+    })
   })
-})
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -361,6 +412,10 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   isQuitting = true
+  if (tray) {
+    tray.destroy()
+    tray = null
+  }
   crashRecoveryManager.stop()
   backupManager.cleanup()
   syncManager.cleanup()
@@ -410,8 +465,7 @@ function createTray() {
     {
       label: '退出',
       click: () => {
-        isQuitting = true
-        app.quit()
+        requestAppQuit()
       }
     }
   ])

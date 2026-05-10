@@ -285,6 +285,7 @@ body {
     display: flex;
     gap: 3rem;
     animation: fadeInUp 0.8s ease-out 0.6s both;
+    flex-wrap: wrap;
 }
 
 .stat-item {
@@ -316,7 +317,7 @@ body {
 }
 
 .stat-value {
-    font-size: 1.5rem;
+    font-size: 1.35rem;
     font-weight: 700;
     color: var(--primary-light);
     margin-bottom: 0.25rem;
@@ -523,6 +524,91 @@ body {
     height: 20px;
 }
 
+/* ==================== 客户端协同 ==================== */
+.clients {
+    padding: 60px 0;
+    background: white;
+}
+
+.clients-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.client-card,
+.shared-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    padding: 1.75rem;
+    box-shadow: var(--shadow-sm);
+    transition: all var(--transition-normal);
+}
+
+.client-card.featured {
+    border-color: var(--primary-light);
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(99, 102, 241, 0.08));
+}
+
+.client-card:hover,
+.shared-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+}
+
+.client-meta {
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
+    padding: 0 0.75rem;
+    border-radius: var(--radius-md);
+    background: rgba(14, 165, 233, 0.12);
+    color: var(--primary-dark);
+    font-weight: 700;
+    font-size: 0.85rem;
+    margin-bottom: 1rem;
+}
+
+.client-card h3,
+.shared-card h3 {
+    font-size: 1.3rem;
+    margin-bottom: 0.75rem;
+    color: var(--text-primary);
+}
+
+.client-card p,
+.shared-card p {
+    color: var(--text-secondary);
+    line-height: 1.75;
+}
+
+.client-list {
+    list-style: none;
+    margin-top: 1rem;
+}
+
+.client-list li {
+    position: relative;
+    padding: 0.35rem 0 0.35rem 1.4rem;
+    color: var(--text-secondary);
+}
+
+.client-list li::before {
+    content: '✓';
+    position: absolute;
+    left: 0;
+    color: var(--success-color);
+    font-weight: 700;
+}
+
+.shared-data {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+}
+
 /* ==================== 功能特性 ==================== */
 .features {
     padding: 60px 0;
@@ -532,7 +618,6 @@ body {
 .section-header {
     text-align: center;
     margin-bottom: 2.5rem;
-}
 }
 
 .section-title {
@@ -666,11 +751,12 @@ body {
 }
 
 .download-cards {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     justify-content: center;
     gap: 2rem;
     margin-bottom: 2rem;
-    max-width: 450px;
+    max-width: 760px;
     margin-left: auto;
     margin-right: auto;
 }
@@ -929,6 +1015,10 @@ body {
         grid-template-columns: 1fr;
         gap: 1rem;
     }
+
+    .shared-data {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 768px) {
@@ -965,8 +1055,20 @@ body {
     }
     
     .features-grid,
-    .docs-grid {
+    .docs-grid,
+    .clients-grid,
+    .download-cards {
         grid-template-columns: 1fr;
+    }
+
+    .hero-stats {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: flex-start;
+    }
+
+    .stat-item {
+        text-align: left;
     }
     
     .section-title {

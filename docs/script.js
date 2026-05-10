@@ -295,4 +295,4 @@ if (savedTheme) {
 console.log('%c🚀 MShell', 'font-size: 24px; font-weight: bold; color: #0ea5e9;');
 console.log('%c欢迎使用 MShell！', 'font-size: 14px; color: #6366f1;');
 console.log('%c如果你对我们的项目感兴趣，欢迎访问 GitHub 贡献代码！', 'font-size: 12px; color: #64748b;');
-console.log('%chttps://github.com/yourusername/mshell', 'font-size: 12px; color: #0ea5e9; text-decoration: underline;');
+console.log('%chttps://github.com/inspoaibox/Mshell', 'font-size: 12px; color: #0ea5e9; text-decoration: underline;');
