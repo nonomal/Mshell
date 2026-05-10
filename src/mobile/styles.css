@@ -207,27 +207,39 @@ textarea {
 }
 
 .session-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(116px, 32vw, 172px);
   align-items: stretch;
-  flex-direction: column;
+  gap: 12px;
 }
 
 .session-summary {
   min-width: 0;
 }
 
+.session-summary h3,
+.session-summary p {
+  overflow-wrap: anywhere;
+}
+
 .session-actions {
   display: grid;
-  grid-template-columns: minmax(108px, 1fr) repeat(2, minmax(64px, auto));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-self: stretch;
   gap: 8px;
   width: 100%;
 }
 
 .session-actions button {
+  min-width: 0;
   min-height: 42px;
+  padding-right: 8px;
+  padding-left: 8px;
 }
 
 .session-connect-button {
   width: 100%;
+  grid-column: 1 / -1;
 }
 
 .compact-card {
@@ -704,6 +716,13 @@ textarea {
   z-index: 95;
 }
 
+.session-action-backdrop {
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px 16px calc(96px + env(safe-area-inset-bottom));
+  background: rgba(2, 6, 23, 0.38);
+}
+
 .terminal-switcher {
   display: grid;
   gap: 10px;
@@ -711,7 +730,13 @@ textarea {
 
 .session-action-sheet {
   display: grid;
+  width: min(100%, 360px);
+  max-height: none;
   gap: 12px;
+  padding: 14px;
+  border: 1px solid #253247;
+  border-radius: 8px;
+  box-shadow: 0 18px 44px rgba(2, 6, 23, 0.4);
 }
 
 .action-sheet-body {
@@ -899,8 +924,14 @@ textarea {
     flex-wrap: wrap;
   }
 
+  .session-card {
+    grid-template-columns: minmax(0, 1fr) clamp(112px, 34vw, 148px);
+    align-items: stretch;
+    flex-direction: initial;
+  }
+
   .session-actions {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .session-connect-button {

@@ -340,7 +340,11 @@
       </div>
     </div>
 
-    <div v-if="sessionActionMenu" class="modal-backdrop" @click.self="closeSessionActions">
+    <div
+      v-if="sessionActionMenu"
+      class="modal-backdrop session-action-backdrop"
+      @click.self="closeSessionActions"
+    >
       <div class="modal session-action-sheet">
         <header>
           <h2>{{ sessionActionMenu.name }}</h2>
