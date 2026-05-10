@@ -91,6 +91,7 @@
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { View, Edit, Document } from '@element-plus/icons-vue'
+import { formatSftpOperationError } from '@/utils/sftp-errors'
 
 interface FileInfo {
   name: string
@@ -243,10 +244,10 @@ const handleSave = async () => {
       ElMessage.success('文件已保存')
       mode.value = 'view'
     } else {
-      ElMessage.error(`保存失败: ${result.error}`)
+      ElMessage.error(formatSftpOperationError('保存文件', result.error, props.file.path))
     }
   } catch (error: any) {
-    ElMessage.error(`保存失败: ${error.message}`)
+    ElMessage.error(formatSftpOperationError('保存文件', error.message, props.file.path))
   } finally {
     saving.value = false
   }

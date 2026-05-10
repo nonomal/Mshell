@@ -77,8 +77,14 @@
 
       <div v-if="displayFiles.length === 0 && !loading && !isDragOver" class="empty-state">
         <el-icon :size="48"><FolderOpened /></el-icon>
-        <p>文件夹为空</p>
-        <p class="drag-hint">拖曳文件到此处上传</p>
+        <template v-if="directoryError">
+          <p>{{ directoryError }}</p>
+          <el-button size="small" type="primary" @click="refreshDirectory">重试</el-button>
+        </template>
+        <template v-else>
+          <p>文件夹为空</p>
+          <p class="drag-hint">拖曳文件到此处上传</p>
+        </template>
       </div>
 
       <div
@@ -420,6 +426,7 @@ import {
   ArrowUp,
   ArrowDown
 } from '@element-plus/icons-vue'
+import { formatSftpOperationError } from '@/utils/sftp-errors'
 
 interface FileInfo {
   name: string
@@ -446,6 +453,7 @@ const loading = ref(false)
 const currentPath = ref('/')
 const pathInput = ref('/')
 const files = ref<FileInfo[]>([])
+const directoryError = ref('')
 const selectedFile = ref<FileInfo | null>(null)
 const selectedFiles = ref<Set<string>>(new Set()) // 多选文件的 path 集合
 const lastSelectedIndex = ref<number>(-1) // 用于 Shift 多选
@@ -706,22 +714,30 @@ const formatSize = (bytes: number): string => {
 }
 
 // 加载目录
-const loadDirectory = async (path: string) => {
+const normalizeRemotePath = (path: string) => {
+  const trimmed = path.trim()
+  if (!trimmed) return '/'
+  return trimmed.startsWith('/') ? trimmed.replace(/\/+/g, '/') : `/${trimmed}`.replace(/\/+/g, '/')
+}
+
+const loadDirectory = async (path: string, notify = true): Promise<boolean> => {
   loading.value = true
+  directoryError.value = ''
   // 清空选择状态
   selectedFiles.value.clear()
   selectedFile.value = null
   lastSelectedIndex.value = -1
 
   try {
-    const result = await window.electronAPI.sftp.listDirectory(props.connectionId, path)
+    const targetPath = normalizeRemotePath(path)
+    const result = await window.electronAPI.sftp.listDirectory(props.connectionId, targetPath)
     if (result.success && result.files) {
       files.value = result.files
         .filter((f: FileInfo) => f.name !== '.' && f.name !== '..')
         .map((f: FileInfo) => ({
           ...f,
           // 确保 path 是完整路径
-          path: f.path || (path === '/' ? '/' + f.name : path + '/' + f.name)
+          path: f.path || (targetPath === '/' ? '/' + f.name : targetPath + '/' + f.name)
         }))
         .sort((a: FileInfo, b: FileInfo) => {
           // 文件夹优先
@@ -729,16 +745,46 @@ const loadDirectory = async (path: string) => {
           if (a.type !== 'directory' && b.type === 'directory') return 1
           return a.name.localeCompare(b.name)
         })
-      currentPath.value = path
-      pathInput.value = path
+      currentPath.value = targetPath
+      pathInput.value = targetPath
       console.log('[TerminalFilePanel] Loaded directory:', path, 'files:', files.value.length)
+      return true
     } else {
-      ElMessage.error(result.error || '加载目录失败')
+      const message = formatSftpOperationError('加载目录', result.error, targetPath)
+      directoryError.value = message
+      files.value = []
+      if (notify) ElMessage.error(message)
+      return false
     }
   } catch (error: any) {
-    ElMessage.error('加载目录失败: ' + error.message)
+    const message = formatSftpOperationError('加载目录', error.message, path)
+    directoryError.value = message
+    files.value = []
+    if (notify) ElMessage.error(message)
+    return false
   } finally {
     loading.value = false
+  }
+}
+
+const loadFirstAccessibleDirectory = async (paths: string[]) => {
+  const normalizedPaths = Array.from(new Set(paths.map(normalizeRemotePath)))
+  let lastError = ''
+
+  for (const path of normalizedPaths) {
+    const loaded = await loadDirectory(path, false)
+    if (loaded) {
+      if (path !== normalizedPaths[0]) {
+        ElMessage.warning(`默认目录不可访问，已切换到 ${path}`)
+      }
+      return
+    }
+    lastError = directoryError.value
+  }
+
+  if (lastError) {
+    directoryError.value = lastError
+    ElMessage.error(lastError)
   }
 }
 
@@ -1280,10 +1326,12 @@ const confirmPermissions = async () => {
       showPermissionsDialog.value = false
       refreshDirectory()
     } else {
-      ElMessage.error(result.error || '权限修改失败')
+      ElMessage.error(
+        formatSftpOperationError('权限修改', result.error, contextMenuFile.value.path)
+      )
     }
   } catch (error: any) {
-    ElMessage.error('权限修改失败: ' + error.message)
+    ElMessage.error(formatSftpOperationError('权限修改', error.message, contextMenuFile.value.path))
   }
 }
 
@@ -1765,10 +1813,10 @@ const saveEditedFile = async () => {
       showEditDialog.value = false
       refreshDirectory()
     } else {
-      ElMessage.error(result.error || '保存失败')
+      ElMessage.error(formatSftpOperationError('保存文件', result.error, editingFilePath.value))
     }
   } catch (error: any) {
-    ElMessage.error('保存失败: ' + error.message)
+    ElMessage.error(formatSftpOperationError('保存文件', error.message, editingFilePath.value))
   } finally {
     editSaving.value = false
   }
@@ -1801,7 +1849,11 @@ const initSFTP = async () => {
 
   loading.value = true
   try {
-    await window.electronAPI.sftp.init(props.connectionId)
+    const result = await window.electronAPI.sftp.init(props.connectionId)
+    if (result && result.success === false) {
+      ElMessage.error(result.error || 'SFTP 初始化失败')
+      return false
+    }
     sftpInitialized.value = true
     return true
   } catch (error: any) {
@@ -1826,7 +1878,7 @@ onMounted(async () => {
   const initialized = await initSFTP()
   if (initialized) {
     const initialPath = getInitialPath()
-    loadDirectory(initialPath)
+    loadFirstAccessibleDirectory([initialPath, '/', '/tmp'])
   }
 })
 
@@ -1854,7 +1906,7 @@ watch(
     const initialized = await initSFTP()
     if (initialized) {
       const initialPath = getInitialPath()
-      loadDirectory(initialPath)
+      loadFirstAccessibleDirectory([initialPath, '/', '/tmp'])
     }
   }
 )
@@ -1983,6 +2035,10 @@ watch(
 .empty-state p {
   margin-top: 12px;
   font-size: var(--text-sm);
+  max-width: 320px;
+  text-align: center;
+  line-height: 1.5;
+  word-break: break-word;
 }
 
 .empty-state .drag-hint {

@@ -36,20 +36,33 @@ const isDragging = ref(false)
 const isDragOver = ref(false)
 
 const handleDragStart = (event: DragEvent) => {
-  isDragging.value = true
-  
-  dragDrop.startDrag({
-    id: props.tabId,
-    type: 'tab',
-    data: {
-      ...props.tabData,
-      index: props.index
-    }
-  }, event)
+  if (!event.dataTransfer) return
 
-  if (event.dataTransfer) {
-    event.dataTransfer.effectAllowed = 'move'
-  }
+  isDragging.value = true
+
+  dragDrop.startDrag(
+    {
+      id: props.tabId,
+      type: 'tab',
+      data: {
+        ...props.tabData,
+        index: props.index
+      }
+    },
+    event
+  )
+
+  event.dataTransfer.effectAllowed = 'move'
+
+  const dragImage = document.createElement('div')
+  dragImage.className = 'tab-drag-image'
+  dragImage.textContent =
+    props.tabData?.name || props.tabData?.session?.name || event.currentTarget?.textContent || ''
+  document.body.appendChild(dragImage)
+  event.dataTransfer.setDragImage(dragImage, 12, 12)
+  requestAnimationFrame(() => {
+    dragImage.remove()
+  })
 }
 
 const handleDragEnd = () => {
@@ -59,9 +72,8 @@ const handleDragEnd = () => {
 
 const handleDragEnter = (event: DragEvent) => {
   event.preventDefault()
-  
-  if (dragDrop.draggedItem.value?.type === 'tab' && 
-      dragDrop.draggedItem.value.id !== props.tabId) {
+
+  if (dragDrop.draggedItem.value?.type === 'tab' && dragDrop.draggedItem.value.id !== props.tabId) {
     isDragOver.value = true
   }
 }
@@ -72,9 +84,8 @@ const handleDragLeave = () => {
 
 const handleDragOver = (event: DragEvent) => {
   event.preventDefault()
-  
-  if (dragDrop.draggedItem.value?.type === 'tab' && 
-      dragDrop.draggedItem.value.id !== props.tabId) {
+
+  if (dragDrop.draggedItem.value?.type === 'tab' && dragDrop.draggedItem.value.id !== props.tabId) {
     if (event.dataTransfer) {
       event.dataTransfer.dropEffect = 'move'
     }
@@ -84,16 +95,16 @@ const handleDragOver = (event: DragEvent) => {
 const handleDrop = (event: DragEvent) => {
   event.preventDefault()
   isDragOver.value = false
-  
+
   const draggedItem = dragDrop.draggedItem.value
   if (!draggedItem || draggedItem.type !== 'tab') return
-  
+
   if (draggedItem.id === props.tabId) return
-  
+
   // 触发重新排序
   const fromIndex = draggedItem.data.index
   const toIndex = props.index
-  
+
   emit('reorder', fromIndex, toIndex)
   dragDrop.endDrag()
 }
@@ -107,7 +118,7 @@ const handleDrop = (event: DragEvent) => {
 }
 
 .draggable-tab.dragging {
-  opacity: 0.5;
+  opacity: 0.85;
   cursor: grabbing;
 }
 
@@ -129,5 +140,22 @@ const handleDrop = (event: DragEvent) => {
 .draggable-tab.active {
   background: var(--bg-primary);
   border-bottom: 2px solid var(--primary-color);
+}
+
+.tab-drag-image {
+  position: fixed;
+  top: -1000px;
+  left: -1000px;
+  max-width: 220px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
 }
 </style>

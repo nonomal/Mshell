@@ -75,28 +75,28 @@
         <article
           v-for="session in filteredSessions"
           :key="session.id"
-          class="list-card"
+          class="list-card session-card"
           :class="{ selected: selectedSessionId === session.id }"
           @click="selectSession(session)"
         >
-          <div>
+          <div class="session-summary">
             <h3>{{ session.name }}</h3>
             <p>{{ session.username }}@{{ session.host }}:{{ session.port }}</p>
+            <p>{{ session.authType === 'privateKey' ? 'SSH 密钥认证' : '密码认证' }}</p>
             <p v-if="sessionManagementText(session)">{{ sessionManagementText(session) }}</p>
             <p v-if="sessionBillingText(session)">{{ sessionBillingText(session) }}</p>
             <p v-if="session.description">{{ session.description }}</p>
             <p v-if="session.notes">{{ session.notes }}</p>
           </div>
-          <div class="card-actions">
-            <span>{{ session.authType === 'privateKey' ? 'Key' : 'Pwd' }}</span>
+          <div class="session-actions">
+            <button type="button" class="session-connect-button" @click.stop="openTerminal(session)">
+              连接
+            </button>
             <button type="button" class="secondary small" @click.stop="openSessionEditor(session)">
               编辑
             </button>
-            <button type="button" class="small" @click.stop="openTerminal(session)">
-              连接
-            </button>
-            <button type="button" class="danger small" @click.stop="deleteSession(session.id)">
-              删除
+            <button type="button" class="secondary small" @click.stop="openSessionActions(session)">
+              更多
             </button>
           </div>
         </article>
@@ -168,8 +168,8 @@
       <section v-else class="panel">
         <div class="section-head">
           <div>
-            <h2>同步与备份</h2>
-            <p>支持桌面端备份 JSON、.mshell 备份和 GitHub/GitLab 同步 JSON</p>
+            <h2>设置</h2>
+            <p>管理远程同步、备份导入导出、安全锁和终端输入模式</p>
           </div>
         </div>
         <RemoteSyncPanel @synced="refreshState" />
@@ -337,6 +337,26 @@
           <button type="button" @click="showImport = false">×</button>
         </header>
         <ImportPanel @imported="handleModalImported" />
+      </div>
+    </div>
+
+    <div v-if="sessionActionMenu" class="modal-backdrop" @click.self="closeSessionActions">
+      <div class="modal session-action-sheet">
+        <header>
+          <h2>{{ sessionActionMenu.name }}</h2>
+          <button type="button" @click="closeSessionActions">×</button>
+        </header>
+        <div class="action-sheet-body">
+          <button type="button" @click="connectFromSessionActions">
+            连接
+          </button>
+          <button type="button" class="secondary" @click="editFromSessionActions">
+            编辑
+          </button>
+          <button type="button" class="danger" @click="deleteFromSessionActions">
+            删除此会话
+          </button>
+        </div>
       </div>
     </div>
 
@@ -680,7 +700,7 @@ const tabs: Array<{ id: TabId; label: string; icon: string }> = [
   { id: 'sessions', label: '会话', icon: '⌁' },
   { id: 'snippets', label: '片段', icon: '⌘' },
   { id: 'keys', label: '密钥', icon: '◇' },
-  { id: 'sync', label: '同步', icon: '⇄' }
+  { id: 'sync', label: '设置', icon: '⚙' }
 ]
 
 const activeTab = ref<TabId>('sessions')
@@ -700,6 +720,7 @@ const selectedSnippetCategory = ref('all')
 const categoryDrawer = ref<CategoryDrawer | null>(null)
 const editor = ref<EditorState | null>(null)
 const lastSessionTap = ref<{ id: string; at: number }>({ id: '', at: 0 })
+const sessionActionMenu = ref<SessionConfig | null>(null)
 
 const sessionForm = reactive({
   id: '',
@@ -1007,6 +1028,38 @@ const openSelectedOrFirstTerminal = async () => {
   }
   selectedSessionId.value = session.id
   await openTerminal(session)
+}
+
+const openSessionActions = (session: SessionConfig) => {
+  selectedSessionId.value = session.id
+  sessionActionMenu.value = session
+}
+
+const closeSessionActions = () => {
+  sessionActionMenu.value = null
+}
+
+const connectFromSessionActions = async () => {
+  const session = sessionActionMenu.value
+  if (!session) return
+  closeSessionActions()
+  await openTerminal(session)
+}
+
+const editFromSessionActions = () => {
+  const session = sessionActionMenu.value
+  if (!session) return
+  closeSessionActions()
+  openSessionEditor(session)
+}
+
+const deleteFromSessionActions = () => {
+  const session = sessionActionMenu.value
+  if (!session) return
+  deleteSession(session.id)
+  if (!state.value.sessions.some((item) => item.id === session.id)) {
+    closeSessionActions()
+  }
 }
 
 const openTerminal = async (session: SessionConfig) => {

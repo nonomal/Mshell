@@ -206,7 +206,13 @@
           </div>
 
           <FileDropZone v-else :disabled="!currentSession" @upload="handleFilesDrop">
+            <div v-if="remoteDirectoryError" class="empty-state error-state">
+              <el-icon :size="48"><FolderOpened /></el-icon>
+              <p>{{ remoteDirectoryError }}</p>
+              <el-button size="small" type="primary" @click="loadRemoteDirectory()">重试</el-button>
+            </div>
             <VirtualTable
+              v-else
               :data="visibleRemoteFiles"
               :columns="remoteFileColumns"
               :row-height="40"
@@ -409,7 +415,7 @@
         </div>
         <div
           v-for="record in incompleteTransfers"
-          :key="record.taskId"
+          :key="getTransferRecordId(record)"
           class="transfer-item incomplete-item"
         >
           <div class="transfer-info">
@@ -433,7 +439,7 @@
                   {{ formatSize({ size: record.totalSize }) }}</span
                 >
                 <span>进度: {{ ((record.transferred / record.totalSize) * 100).toFixed(1) }}%</span>
-                <span>时间: {{ formatTime({ modifyTime: new Date(record.lastModified) }) }}</span>
+                <span>时间: {{ formatTime({ modifyTime: getTransferRecordTime(record) }) }}</span>
               </div>
             </div>
             <div class="transfer-actions">
@@ -450,7 +456,7 @@
                 text
                 size="small"
                 type="danger"
-                @click="deleteTransferRecord(record.taskId)"
+                @click="deleteTransferRecord(getTransferRecordId(record))"
                 :icon="Delete"
               >
                 删除记录
@@ -665,6 +671,7 @@ import FileDropZone from './FileDropZone.vue'
 import VirtualTable from '../Common/VirtualTable.vue'
 import type { Column } from '../Common/VirtualTable.vue'
 import { useLocale } from '@/composables/useLocale'
+import { formatSftpOperationError } from '@/utils/sftp-errors'
 
 // 国际化和格式化
 const { t, formatBytes: formatBytesLocale, formatDateTime, formatRelativeTime } = useLocale()
@@ -695,14 +702,17 @@ interface Transfer {
 }
 
 interface TransferRecord {
-  taskId: string
+  id: string
+  taskId?: string
   type: 'upload' | 'download'
   localPath: string
   remotePath: string
   totalSize: number
   transferred: number
   status: string
-  lastModified: string
+  createdAt?: string
+  updatedAt?: string
+  lastModified?: string
   connectionId?: string
 }
 
@@ -773,6 +783,7 @@ const remotePathInput = ref('')
 const remoteFiles = ref<FileInfo[]>([])
 const selectedRemoteFiles = ref<FileInfo[]>([])
 const loadingRemote = ref(false)
+const remoteDirectoryError = ref('')
 
 // 传输
 const transfers = ref<Transfer[]>([])
@@ -866,6 +877,34 @@ const applySftpSettings = (settings: any) => {
     showHiddenFiles: sftp.showHiddenFiles === true
   }
 }
+
+const normalizeRemotePath = (path: string) => {
+  const trimmed = path.trim()
+  if (!trimmed) return '/'
+  return trimmed.startsWith('/') ? trimmed.replace(/\/+/g, '/') : `/${trimmed}`.replace(/\/+/g, '/')
+}
+
+const getRemoteHomePath = async (session: SessionConfig) => {
+  try {
+    const result = await window.electronAPI.ssh.executeCommand(
+      session.id,
+      'printf %s "$HOME"',
+      3000
+    )
+    if (result.success && result.data?.trim()) {
+      return normalizeRemotePath(result.data.trim())
+    }
+  } catch (error) {
+    console.warn('[SFTPPanel] Failed to detect remote home path:', error)
+  }
+
+  return session.username === 'root' ? '/root' : `/home/${session.username}`
+}
+
+const getTransferRecordId = (record: TransferRecord) => record.id || record.taskId || ''
+
+const getTransferRecordTime = (record: TransferRecord) =>
+  new Date(record.updatedAt || record.lastModified || record.createdAt || Date.now())
 
 // 计算八进制权限值
 const computedOctalPermission = computed(() => {
@@ -1017,15 +1056,10 @@ const connectSession = async (session: SessionConfig) => {
     if (sftpResult.success) {
       currentSession.value = session
 
-      // root 用户默认 /root，其他用户 /home/username
-      if (session.username === 'root') {
-        remotePath.value = '/root'
-      } else {
-        remotePath.value = `/home/${session.username}`
-      }
+      remotePath.value = await getRemoteHomePath(session)
 
       remotePathInput.value = remotePath.value
-      await loadRemoteDirectory()
+      await loadFirstAccessibleRemoteDirectory([remotePath.value, '/', '/tmp'])
 
       // 加载未完成的传输
       await loadIncompleteTransfers()
@@ -1313,32 +1347,69 @@ const deleteLocalFilesMultiple = async () => {
 }
 
 // 远程文件操作
-const loadRemoteDirectory = async (silent = false) => {
-  if (!currentSession.value) return
+const loadRemoteDirectory = async (silent = false): Promise<boolean> => {
+  if (!currentSession.value) return false
 
   if (!silent) {
     loadingRemote.value = true
   }
+  remoteDirectoryError.value = ''
   try {
-    const result = await window.electronAPI.sftp.listDirectory(
-      currentSession.value.id,
-      remotePath.value
-    )
+    const targetPath = normalizeRemotePath(remotePath.value)
+    const result = await window.electronAPI.sftp.listDirectory(currentSession.value.id, targetPath)
 
     if (result.success && result.files) {
+      remotePath.value = targetPath
+      remotePathInput.value = targetPath
       remoteFiles.value = result.files.map((file: any) => ({
         name: file.name,
-        path: `${remotePath.value}/${file.name}`.replace(/\/+/g, '/'),
+        path: `${targetPath}/${file.name}`.replace(/\/+/g, '/'),
         type: file.type,
         size: file.size,
         modifyTime: new Date(file.modifyTime),
         permissions: file.permissions
       }))
+      return true
+    } else {
+      const message = formatSftpOperationError('加载远程目录', result.error, targetPath)
+      remoteFiles.value = []
+      selectedRemoteFiles.value = []
+      remoteDirectoryError.value = message
+      if (!silent) ElMessage.error(message)
+      return false
     }
   } catch (error: any) {
-    ElMessage.error(`加载远程目录失败: ${error.message}`)
+    const message = formatSftpOperationError('加载远程目录', error.message, remotePath.value)
+    remoteFiles.value = []
+    selectedRemoteFiles.value = []
+    remoteDirectoryError.value = message
+    if (!silent) ElMessage.error(message)
+    return false
   } finally {
     loadingRemote.value = false
+  }
+}
+
+const loadFirstAccessibleRemoteDirectory = async (paths: string[]) => {
+  const normalizedPaths = Array.from(new Set(paths.map(normalizeRemotePath)))
+  let lastError = ''
+
+  for (const path of normalizedPaths) {
+    remotePath.value = path
+    remotePathInput.value = path
+    const loaded = await loadRemoteDirectory(true)
+    if (loaded) {
+      if (path !== normalizedPaths[0]) {
+        ElMessage.warning(`默认目录不可访问，已切换到 ${path}`)
+      }
+      return
+    }
+    lastError = remoteDirectoryError.value
+  }
+
+  if (lastError) {
+    remoteDirectoryError.value = lastError
+    ElMessage.error(lastError)
   }
 }
 
@@ -1354,7 +1425,7 @@ const navigateToRemotePathInput = async () => {
   const inputPath = remotePathInput.value.trim()
   if (!inputPath) return
 
-  remotePath.value = inputPath
+  remotePath.value = normalizeRemotePath(inputPath)
   await loadRemoteDirectory()
 }
 
@@ -1775,10 +1846,12 @@ const confirmPermissions = async () => {
       showPermissionsDialog.value = false
       editingPermissions.value = null
     } else {
-      ElMessage.error(`权限修改失败: ${result.error}`)
+      ElMessage.error(formatSftpOperationError('权限修改', result.error, filePath))
     }
   } catch (error: any) {
-    ElMessage.error(`权限修改失败: ${error.message}`)
+    ElMessage.error(
+      formatSftpOperationError('权限修改', error.message, editingPermissions.value.path)
+    )
   }
 }
 
@@ -2263,7 +2336,11 @@ const resumeIncompleteTransfer = async (record: TransferRecord) => {
     return
   }
 
-  const transferId = record.taskId
+  const transferId = getTransferRecordId(record)
+  if (!transferId) {
+    ElMessage.error('传输记录缺少 ID，无法恢复')
+    return
+  }
 
   // 添加到当前传输列表
   transfers.value.push({
@@ -2786,9 +2863,9 @@ const extractRemoteFileTo = async (file: FileInfo) => {
 </script>
 
 <style scoped>
-/* 
-  Re-architected Layout System 
-  Using CSS Grid for absolute column discipline 
+/*
+  Re-architected Layout System
+  Using CSS Grid for absolute column discipline
 */
 .sftp-panel {
   height: 100%;
@@ -3215,6 +3292,21 @@ const extractRemoteFileTo = async (file: FileInfo) => {
   justify-content: center;
   color: var(--text-tertiary);
   opacity: 0.5;
+}
+
+.error-state {
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  color: var(--error-color);
+  opacity: 1;
+}
+
+.error-state p {
+  max-width: 520px;
+  margin: 0;
+  line-height: 1.6;
+  word-break: break-word;
 }
 
 /* Button & Input Overrides for "Tightness" */

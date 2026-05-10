@@ -10,6 +10,7 @@ import { getTheme } from '@/utils/terminal-themes'
 import { terminalManager } from '@/utils/terminal-manager'
 import { terminalShortcutsManager } from '@/utils/terminal-shortcuts'
 import { useAIStore } from '@/stores/ai'
+import { useAppStore } from '@/stores/app'
 import { ElMessage } from 'element-plus'
 import 'xterm/css/xterm.css'
 
@@ -52,9 +53,11 @@ const emit = defineEmits<{
 }>()
 
 const aiStore = useAIStore()
+const appStore = useAppStore()
 
 // 计算属性：检查是否有默认模型
 const hasDefaultModel = computed(() => aiStore.hasDefaultModel)
+const isActiveTerminal = computed(() => appStore.activeTab === props.connectionId)
 
 const terminalContainer = ref<HTMLElement>()
 let terminal: Terminal | null = null
@@ -69,6 +72,8 @@ const normalizeDataForRemote = (data: string) => (data === '\b' ? '\x7F' : data)
 const removeLastInputCharacter = (value: string) => Array.from(value).slice(0, -1).join('')
 
 const fitAndSyncRemote = () => {
+  if (!isActiveTerminal.value) return
+
   const instance = terminalManager.get(props.connectionId)
   if (instance) {
     terminalManager.fit(props.connectionId)
@@ -369,7 +374,7 @@ onMounted(() => {
   let lastHeight = 0
 
   resizeObserver = new ResizeObserver((entries) => {
-    if (!fitAddon || !terminal || !terminalContainer.value) return
+    if (!fitAddon || !terminal || !terminalContainer.value || !isActiveTerminal.value) return
 
     for (const entry of entries) {
       const { width, height } = entry.contentRect
@@ -405,6 +410,7 @@ onMounted(() => {
 
   setTimeout(() => {
     try {
+      if (!isActiveTerminal.value) return
       console.log(`[TerminalView] Delayed initial fit for ${props.connectionId}`)
       fitAndSyncRemote()
       terminal?.focus() // 自动聚焦
@@ -572,12 +578,23 @@ watch(
     }
 
     // Refit after options change
-    if (fitAddon) {
+    if (fitAddon && isActiveTerminal.value) {
       fitAndSyncRemote()
     }
   },
   { deep: true }
 )
+
+watch(isActiveTerminal, (active) => {
+  if (!active) return
+
+  setTimeout(() => {
+    requestAnimationFrame(() => {
+      fitAndSyncRemote()
+      terminal?.focus()
+    })
+  }, 50)
+})
 
 // Expose methods for parent components
 defineExpose({
@@ -592,9 +609,12 @@ defineExpose({
     }
   },
   focus: () => {
-    if (terminal) {
+    if (terminal && isActiveTerminal.value) {
       terminal.focus()
     }
+  },
+  fit: () => {
+    fitAndSyncRemote()
   },
   // 更新当前命令缓冲（用于自动补全后同步状态）
   updateCommandBuffer: (newCommand: string) => {
@@ -642,11 +662,6 @@ defineExpose({
         caseSensitive: options?.caseSensitive,
         regex: options?.regex
       })
-    }
-  },
-  fit: () => {
-    if (fitAddon) {
-      fitAndSyncRemote()
     }
   }
 })

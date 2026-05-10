@@ -679,6 +679,8 @@ const fontOptions = [
 const currentFont = computed(
   () => props.terminalOptions?.fontFamily || "'JetBrains Mono', monospace"
 )
+const appStore = useAppStore()
+const isActiveTab = computed(() => appStore.activeTab === props.connectionId)
 
 // 键盘事件清理函数（在顶层定义，供 onUnmounted 使用）
 let cleanupKeyboard: (() => void) | null = null
@@ -1390,7 +1392,7 @@ watch(showSnippetDialog, (newValue) => {
   }
   // 侧边栏状态变化时，延迟调整终端大小
   setTimeout(() => {
-    terminalRef.value?.fit?.()
+    if (isActiveTab.value) terminalRef.value?.fit?.()
   }, 300)
 })
 
@@ -1398,7 +1400,7 @@ watch(showSnippetDialog, (newValue) => {
 watch([showMonitor, showCommandHistory, showTerminalAI], () => {
   // 侧边栏状态变化时，延迟调整终端大小
   setTimeout(() => {
-    terminalRef.value?.fit?.()
+    if (isActiveTab.value) terminalRef.value?.fit?.()
   }, 300)
 })
 
