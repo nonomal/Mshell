@@ -1,8 +1,9 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
-import { generateKeyPairSync } from 'crypto'
+import { createHash, createPrivateKey, generateKeyPairSync as cryptoGenerateKeyPairSync } from 'crypto'
 import { utils as ssh2Utils } from 'ssh2'
+import type { ParsedKey } from 'ssh2'
 
 /**
  * SSH 密钥信息
@@ -32,6 +33,8 @@ export interface KeyGenerationOptions {
   passphrase?: string
   comment?: string
 }
+
+type SSHKeyType = SSHKey['type']
 
 /**
  * SSHKeyManager - SSH 密钥管理器
@@ -109,10 +112,17 @@ export class SSHKeyManager {
         publicKey = ssh2Result.publicKey
         privateKey = ssh2Result.privateKey
       } else {
+        if (options.type === 'ed25519') {
+          throw new Error('当前 ssh2 运行库无法生成 OpenSSH Ed25519 密钥')
+        }
         // 回退到 Node.js crypto
         const cryptoResult = this.generateWithCrypto(options)
         publicKey = cryptoResult.publicKey
         privateKey = cryptoResult.privateKey
+      }
+
+      if (!this.isSSHAuthorizedPublicKey(publicKey)) {
+        publicKey = this.derivePublicKey(privateKey, options.passphrase)
       }
 
       // 保存密钥文件
@@ -158,10 +168,27 @@ export class SSHKeyManager {
    */
   private generateWithSSH2(options: KeyGenerationOptions): { publicKey: string; privateKey: string } | null {
     try {
-      // ssh2Utils.generateKeyPair 是异步的，用 Promise + 同步等待方式处理
-      // 实际上 ssh2 的回调在 Node.js 中是异步的，无法真正同步
-      // 直接返回 null，使用 crypto 回退方案（更可靠）
-      return null
+      const keyOptions: any = {
+        comment: options.comment || options.name
+      }
+
+      if (options.passphrase) {
+        keyOptions.passphrase = options.passphrase
+        keyOptions.cipher = 'aes256-cbc'
+        keyOptions.rounds = 16
+      }
+
+      if (options.type === 'rsa') {
+        keyOptions.bits = options.bits || 2048
+      } else if (options.type === 'ecdsa') {
+        keyOptions.bits = options.bits || 256
+      }
+
+      const keyPair = ssh2Utils.generateKeyPairSync(options.type, keyOptions)
+      return {
+        publicKey: keyPair.public,
+        privateKey: keyPair.private
+      }
     } catch (err) {
       return null
     }
@@ -177,7 +204,7 @@ export class SSHKeyManager {
       const privateKeyEncoding = options.passphrase
         ? { type: 'pkcs1' as const, format: 'pem' as const, cipher: 'aes-256-cbc' as const, passphrase: options.passphrase }
         : { type: 'pkcs1' as const, format: 'pem' as const }
-      const { publicKey, privateKey } = generateKeyPairSync('rsa', {
+      const { publicKey, privateKey } = cryptoGenerateKeyPairSync('rsa', {
         modulusLength: bits,
         publicKeyEncoding: { type: 'spki', format: 'pem' },
         privateKeyEncoding
@@ -189,7 +216,7 @@ export class SSHKeyManager {
       const privateKeyEncoding = options.passphrase
         ? { type: 'pkcs8' as const, format: 'pem' as const, cipher: 'aes-256-cbc' as const, passphrase: options.passphrase }
         : { type: 'pkcs8' as const, format: 'pem' as const }
-      const { publicKey, privateKey } = generateKeyPairSync('ed25519', {
+      const { publicKey, privateKey } = cryptoGenerateKeyPairSync('ed25519', {
         publicKeyEncoding: { type: 'spki', format: 'pem' },
         privateKeyEncoding
       })
@@ -199,7 +226,7 @@ export class SSHKeyManager {
       const privateKeyEncoding = options.passphrase
         ? { type: 'sec1' as const, format: 'pem' as const, cipher: 'aes-256-cbc' as const, passphrase: options.passphrase }
         : { type: 'sec1' as const, format: 'pem' as const }
-      const { publicKey, privateKey } = generateKeyPairSync('ec', {
+      const { publicKey, privateKey } = cryptoGenerateKeyPairSync('ec', {
         namedCurve,
         publicKeyEncoding: { type: 'spki', format: 'pem' },
         privateKeyEncoding
@@ -226,16 +253,9 @@ export class SSHKeyManager {
       let publicKey = ''
       
       if (existsSync(publicKeyPath)) {
-        publicKey = readFileSync(publicKeyPath, 'utf-8')
+        publicKey = readFileSync(publicKeyPath, 'utf-8').trim()
       } else {
-        // 没有 .pub 文件，尝试从私钥提取公钥
-        try {
-          const { createPublicKey } = require('crypto')
-          const pubKeyObj = createPublicKey({ key: privateKey, format: 'pem' })
-          publicKey = pubKeyObj.export({ type: 'spki', format: 'pem' }) as string
-        } catch {
-          publicKey = 'Public key not available'
-        }
+        publicKey = this.derivePublicKey(privateKey, passphrase)
       }
 
       // 生成新的 ID 和路径
@@ -245,12 +265,10 @@ export class SSHKeyManager {
 
       // 复制密钥文件
       writeFileSync(newPrivateKeyPath, privateKey, { mode: 0o600 })
-      if (publicKey !== 'Public key not available') {
-        writeFileSync(newPublicKeyPath, publicKey, { mode: 0o644 })
-      }
+      writeFileSync(newPublicKeyPath, publicKey, { mode: 0o644 })
 
       // 检测密钥类型
-      const type = this.detectKeyType(privateKey)
+      const type = this.detectKeyType(privateKey, passphrase)
       const fingerprint = this.generateFingerprint(publicKey)
 
       // 创建密钥记录
@@ -263,7 +281,7 @@ export class SSHKeyManager {
         fingerprint,
         createdAt: new Date().toISOString(),
         usageCount: 0,
-        protected: !!passphrase
+        protected: !!passphrase || this.isPrivateKeyEncrypted(privateKey)
       }
 
       this.keys.set(id, key)
@@ -327,13 +345,18 @@ export class SSHKeyManager {
   /**
    * 检查是否是有效的私钥文件
    */
-  private isValidPrivateKey(content: string): boolean {
-    return content.includes('PRIVATE KEY') || 
-           content.includes('OPENSSH PRIVATE KEY') ||
-           content.includes('EC PRIVATE KEY') ||
-           content.includes('RSA PRIVATE KEY') ||
-           content.includes('DSA PRIVATE KEY') ||
-           content.includes('ENCRYPTED PRIVATE KEY')
+  private isValidPrivateKey(content: string, passphrase?: string): boolean {
+    try {
+      const parsed = this.parsePrivateKey(content, passphrase)
+      return parsed.isPrivateKey()
+    } catch {
+      return content.includes('PRIVATE KEY') ||
+             content.includes('OPENSSH PRIVATE KEY') ||
+             content.includes('EC PRIVATE KEY') ||
+             content.includes('RSA PRIVATE KEY') ||
+             content.includes('DSA PRIVATE KEY') ||
+             content.includes('ENCRYPTED PRIVATE KEY')
+    }
   }
 
   /**
@@ -356,30 +379,29 @@ export class SSHKeyManager {
         this.keys.delete(id)
       }
 
+      const publicKey = keyData.publicKey?.trim() || this.derivePublicKey(keyData.privateKey, keyData.passphrase)
+
       // 写入私钥文件
       writeFileSync(privateKeyPath, keyData.privateKey, { mode: 0o600 })
-      
-      // 写入公钥文件（如果提供）
-      if (keyData.publicKey) {
-        writeFileSync(publicKeyPath, keyData.publicKey, { mode: 0o644 })
-      }
+
+      writeFileSync(publicKeyPath, publicKey, { mode: 0o644 })
 
       // 检测密钥类型
-      const type = this.detectKeyType(keyData.privateKey)
-      const fingerprint = this.generateFingerprint(keyData.publicKey || keyData.privateKey)
+      const type = this.detectKeyType(keyData.privateKey, keyData.passphrase)
+      const fingerprint = this.generateFingerprint(publicKey)
 
       // 创建密钥记录
       const key: SSHKey = {
         id,
         name: keyData.name,
         type,
-        publicKey: keyData.publicKey || 'Public key not provided',
+        publicKey,
         privateKeyPath,
         fingerprint,
         comment: keyData.comment,
         createdAt: new Date().toISOString(),
         usageCount: 0,
-        protected: !!keyData.passphrase
+        protected: !!keyData.passphrase || this.isPrivateKeyEncrypted(keyData.privateKey)
       }
 
       this.keys.set(id, key)
@@ -435,7 +457,7 @@ export class SSHKeyManager {
   /**
    * 更新密钥信息
    */
-  updateKey(id: string, updates: { name?: string; comment?: string; privateKey?: string; publicKey?: string }): void {
+  updateKey(id: string, updates: { name?: string; comment?: string; privateKey?: string; publicKey?: string; passphrase?: string }): void {
     const key = this.keys.get(id)
     if (!key) {
       throw new Error('Key not found')
@@ -449,15 +471,29 @@ export class SSHKeyManager {
     if (updates.privateKey !== undefined && updates.privateKey.trim()) {
       writeFileSync(key.privateKeyPath, updates.privateKey, { mode: 0o600 })
       // 重新检测密钥类型
-      key.type = this.detectKeyType(updates.privateKey)
+      key.type = this.detectKeyType(updates.privateKey, updates.passphrase)
+      key.protected = !!updates.passphrase || this.isPrivateKeyEncrypted(updates.privateKey)
+
+      if (updates.publicKey === undefined || !updates.publicKey.trim()) {
+        const publicKeyPath = `${key.privateKeyPath}.pub`
+        const publicKey = this.derivePublicKey(updates.privateKey, updates.passphrase)
+        writeFileSync(publicKeyPath, publicKey, { mode: 0o644 })
+        key.publicKey = publicKey
+        key.fingerprint = this.generateFingerprint(publicKey)
+      }
     }
 
     // 更新公钥内容
     if (updates.publicKey !== undefined && updates.publicKey.trim()) {
       const publicKeyPath = `${key.privateKeyPath}.pub`
-      writeFileSync(publicKeyPath, updates.publicKey, { mode: 0o644 })
-      key.publicKey = updates.publicKey
-      key.fingerprint = this.generateFingerprint(updates.publicKey)
+      const publicKey = updates.publicKey.trim()
+      writeFileSync(publicKeyPath, publicKey, { mode: 0o644 })
+      key.publicKey = publicKey
+      key.fingerprint = this.generateFingerprint(publicKey)
+    }
+
+    if (updates.privateKey === undefined && updates.passphrase) {
+      key.protected = true
     }
 
     this.saveKeys()
@@ -522,25 +558,27 @@ export class SSHKeyManager {
   /**
    * 检测密钥类型
    */
-  private detectKeyType(privateKey: string): 'rsa' | 'ed25519' | 'ecdsa' {
+  private detectKeyType(privateKey: string, passphrase?: string): SSHKeyType {
+    try {
+      const parsed = this.parsePrivateKey(privateKey, passphrase)
+      return this.mapParsedKeyType(parsed.type)
+    } catch {
+      // 继续使用下面的兼容判断，支持部分 crypto PEM 或损坏提示。
+    }
+
     // 传统格式可以直接从头部判断
     if (privateKey.includes('RSA PRIVATE KEY')) {
       return 'rsa'
     } else if (privateKey.includes('EC PRIVATE KEY')) {
       return 'ecdsa'
     } else if (privateKey.includes('OPENSSH PRIVATE KEY')) {
-      // OpenSSH 格式需要解析内容，这里简单通过内容特征判断
-      if (privateKey.includes('ed25519') || privateKey.includes('ED25519')) {
-        return 'ed25519'
-      } else if (privateKey.includes('ecdsa')) {
-        return 'ecdsa'
-      }
-      return 'rsa' // OpenSSH 格式默认猜测 RSA
+      return 'rsa'
     } else if (privateKey.includes('BEGIN PRIVATE KEY') || privateKey.includes('BEGIN ENCRYPTED PRIVATE KEY')) {
       // PKCS8 通用格式，尝试用 crypto 解析来判断实际类型
       try {
-        const { createPrivateKey } = require('crypto')
-        const keyObj = createPrivateKey({ key: privateKey, format: 'pem' })
+        const keyObj = createPrivateKey(
+          passphrase ? { key: privateKey, format: 'pem', passphrase } : { key: privateKey, format: 'pem' }
+        )
         const asymType = keyObj.asymmetricKeyType
         if (asymType === 'ec') return 'ecdsa'
         if (asymType === 'ed25519') return 'ed25519'
@@ -557,14 +595,74 @@ export class SSHKeyManager {
    * 生成指纹
    */
   private generateFingerprint(publicKey: string): string {
-    // 简化的指纹生成（实际应该使用 crypto 模块生成 MD5 或 SHA256 指纹）
-    const crypto = require('crypto')
-    const hash = crypto.createHash('md5')
-    hash.update(publicKey)
-    const fingerprint = hash.digest('hex')
-    
-    // 格式化为 xx:xx:xx:... 格式
-    return fingerprint.match(/.{2}/g)?.join(':') || fingerprint
+    const keyMaterial = this.getPublicKeyMaterial(publicKey)
+    return `SHA256:${createHash('sha256')
+      .update(keyMaterial)
+      .digest('base64')
+      .replace(/=+$/, '')}`
+  }
+
+  private parsePrivateKey(privateKey: string, passphrase?: string): ParsedKey {
+    const parsed = ssh2Utils.parseKey(privateKey, passphrase)
+    if (parsed instanceof Error) {
+      throw parsed
+    }
+
+    const key = Array.isArray(parsed) ? parsed[0] : parsed
+    if (!key || !key.isPrivateKey()) {
+      throw new Error('不是有效的 SSH 私钥')
+    }
+
+    return key
+  }
+
+  private parsePublicKey(publicKey: string): ParsedKey {
+    const parsed = ssh2Utils.parseKey(publicKey.trim())
+    if (parsed instanceof Error) {
+      throw parsed
+    }
+
+    const key = Array.isArray(parsed) ? parsed[0] : parsed
+    if (!key) {
+      throw new Error('不是有效的 SSH 公钥')
+    }
+
+    return key
+  }
+
+  private derivePublicKey(privateKey: string, passphrase?: string): string {
+    const parsed = this.parsePrivateKey(privateKey, passphrase)
+    const comment = parsed.comment ? ` ${parsed.comment}` : ''
+    return `${parsed.type} ${parsed.getPublicSSH().toString('base64')}${comment}`.trim()
+  }
+
+  private isSSHAuthorizedPublicKey(publicKey: string): boolean {
+    return /^(ssh-rsa|ssh-ed25519|ecdsa-sha2-nistp(256|384|521))\s+/.test(publicKey.trim())
+  }
+
+  private getPublicKeyMaterial(publicKey: string): Buffer | string {
+    try {
+      const parsed = this.parsePublicKey(publicKey)
+      return parsed.getPublicSSH()
+    } catch {
+      return publicKey.trim()
+    }
+  }
+
+  private mapParsedKeyType(type: string): SSHKeyType {
+    if (type.includes('ed25519')) return 'ed25519'
+    if (type.includes('ecdsa')) return 'ecdsa'
+    return 'rsa'
+  }
+
+  private isPrivateKeyEncrypted(privateKey: string): boolean {
+    const parsed = ssh2Utils.parseKey(privateKey)
+    if (parsed instanceof Error) {
+      return /encrypted|passphrase/i.test(parsed.message) ||
+        privateKey.includes('BEGIN ENCRYPTED PRIVATE KEY')
+    }
+
+    return privateKey.includes('BEGIN ENCRYPTED PRIVATE KEY')
   }
 
   /**

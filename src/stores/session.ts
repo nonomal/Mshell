@@ -18,7 +18,7 @@ export const useSessionStore = defineStore('session', () => {
   async function createSession(config: Omit<SessionConfig, 'id' | 'createdAt' | 'updatedAt'>) {
     try {
       const result = await window.electronAPI.session.create(config)
-      if (result.success) {
+      if (result.success && result.data) {
         sessions.value.push(result.data)
         return result.data
       } else {

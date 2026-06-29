@@ -4,9 +4,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { appSettingsManager } from './app-settings'
 
-type KnownHostStatus = 'trusted' | 'unknown' | 'changed'
+export type KnownHostStatus = 'trusted' | 'unknown' | 'changed'
 
-interface KnownHostRecord {
+export interface KnownHostRecord {
   host: string
   port: number
   keyType?: string
@@ -18,6 +18,25 @@ interface KnownHostRecord {
 }
 
 type KnownHosts = Record<string, string | KnownHostRecord>
+
+export interface TrustedHostKey {
+  host?: string
+  port?: number
+  key?: string
+  fingerprint?: string
+  keyType?: string
+}
+
+export interface HostKeyChallengeDetails {
+  host: string
+  port: number
+  keyType?: string
+  key: string
+  fingerprint: string
+  status: Exclude<KnownHostStatus, 'trusted'>
+  knownFingerprint?: string
+  knownKeyType?: string
+}
 
 const knownHostsPath = join(app.getPath('userData'), 'known-hosts.json')
 const legacyKnownHostsPath = join(app.getPath('userData'), 'known_hosts')
@@ -35,7 +54,7 @@ const parseHostKeyId = (hostKeyId: string) => {
   return { host, port }
 }
 
-const getHostKeyFingerprint = (key: Buffer): string => {
+export const getHostKeyFingerprint = (key: Buffer): string => {
   const digest = createHash('sha256').update(key).digest('base64').replace(/=+$/, '')
   return `SHA256:${digest}`
 }
@@ -182,6 +201,42 @@ export const knownHostsManager = {
     const knownHosts = loadKnownHosts()
     delete knownHosts[hostKeyId]
     saveKnownHosts(knownHosts)
+  },
+
+  isTrustedHostKey(
+    host: string,
+    port: number,
+    key: Buffer,
+    trustedHostKey?: TrustedHostKey
+  ): boolean {
+    if (!trustedHostKey) return false
+    if (trustedHostKey.host && trustedHostKey.host !== host) return false
+    if (trustedHostKey.port && Number(trustedHostKey.port) !== port) return false
+
+    const fingerprint = getHostKeyFingerprint(key)
+    const keyBase64 = key.toString('base64')
+
+    return trustedHostKey.fingerprint === fingerprint || trustedHostKey.key === keyBase64
+  },
+
+  createChallenge(
+    host: string,
+    port: number,
+    keyType: string | undefined,
+    key: Buffer,
+    status: Exclude<KnownHostStatus, 'trusted'>
+  ): HostKeyChallengeDetails {
+    const knownHost = this.getHost(host, port)
+    return {
+      host,
+      port,
+      keyType,
+      key: key.toString('base64'),
+      fingerprint: getHostKeyFingerprint(key),
+      status,
+      knownFingerprint: knownHost?.fingerprint,
+      knownKeyType: knownHost?.keyType
+    }
   }
 }
 

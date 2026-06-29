@@ -1,5 +1,5 @@
 
-import type { CommandDefinition, CompletionContext, CompletionItem } from '../types';
+import type { CommandDefinition } from '../types';
 
 /**
  * nginx 命令 - Nginx Web 服务器

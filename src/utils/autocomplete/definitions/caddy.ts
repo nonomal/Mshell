@@ -1,5 +1,5 @@
 
-import type { CommandDefinition, CompletionContext, CompletionItem } from '../types';
+import type { CommandDefinition } from '../types';
 
 /**
  * caddy 命令 - Caddy Web 服务器

@@ -1,5 +1,5 @@
 
-import type { CommandDefinition, CompletionContext, CompletionItem } from '../types';
+import type { CommandDefinition } from '../types';
 
 /**
  * firewall-cmd 命令 - FirewallD (CentOS/RHEL/Fedora)

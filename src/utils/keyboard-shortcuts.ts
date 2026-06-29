@@ -93,8 +93,8 @@ export class KeyboardShortcutManager {
     }
     
     const expectedCode = keyToCode[configKeyLower]
-    const keyMatch = eventKeyLower === configKeyLower || 
-                     (expectedCode && event.code === expectedCode)
+    const keyMatch = eventKeyLower === configKeyLower ||
+                     Boolean(expectedCode && event.code === expectedCode)
     
     const ctrlMatch = !!config.ctrl === (event.ctrlKey || event.metaKey) // 支持 Mac Command 键
     const altMatch = !!config.alt === event.altKey

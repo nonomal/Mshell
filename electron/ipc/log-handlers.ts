@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { logger, LogEntry } from '../utils/logger'
+import { logger } from '../utils/logger'
 
 export function registerLogHandlers() {
   // 获取日志

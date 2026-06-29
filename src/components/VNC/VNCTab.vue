@@ -97,7 +97,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { FullScreen, DocumentCopy, Close, CircleClose } from '@element-plus/icons-vue'
 import type { SessionConfig } from '@/types/session'

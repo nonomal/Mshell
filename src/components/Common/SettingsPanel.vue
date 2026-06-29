@@ -736,29 +736,50 @@
                     </el-form-item>
 
                     <el-form-item label="操作" v-if="syncConfig.provider === 'github'">
-                      <div style="display: flex; gap: 8px">
-                        <el-button
-                          type="primary"
-                          :loading="syncState.syncing"
-                          :disabled="!hasSyncEncryptionPassword"
-                          @click="doSync"
+                      <div class="sync-action-buttons">
+                        <el-tooltip
+                          content="比较本地和云端数据，自动选择上传或下载；两边都变化时会提示手动选择"
+                          placement="top"
                         >
-                          立即同步
-                        </el-button>
-                        <el-button
-                          :loading="syncState.uploading"
-                          :disabled="!hasSyncEncryptionPassword"
-                          @click="doUpload"
+                          <span>
+                            <el-button
+                              type="primary"
+                              :icon="Refresh"
+                              :loading="syncState.syncing"
+                              :disabled="!canSmartSyncGitHub"
+                              @click="doSync"
+                            >
+                              智能同步
+                            </el-button>
+                          </span>
+                        </el-tooltip>
+                        <el-tooltip
+                          content="用本地数据更新云端同步数据；云端已有数据时会被覆盖"
+                          placement="top"
                         >
-                          上传到云端
-                        </el-button>
-                        <el-button
-                          :loading="syncState.downloading"
-                          :disabled="!hasSyncEncryptionPassword || !syncConfig.github?.gistId"
-                          @click="doDownload"
-                        >
-                          从云端下载
-                        </el-button>
+                          <span>
+                            <el-button
+                              :icon="Upload"
+                              :loading="syncState.uploading"
+                              :disabled="!hasSyncEncryptionPassword"
+                              @click="doUpload"
+                            >
+                              {{ syncConfig.github?.gistId ? '覆盖云端' : '上传到云端' }}
+                            </el-button>
+                          </span>
+                        </el-tooltip>
+                        <el-tooltip content="用云端同步数据覆盖本地数据" placement="top">
+                          <span>
+                            <el-button
+                              :icon="Download"
+                              :loading="syncState.downloading"
+                              :disabled="!hasSyncEncryptionPassword || !syncConfig.github?.gistId"
+                              @click="doDownload"
+                            >
+                              覆盖本地
+                            </el-button>
+                          </span>
+                        </el-tooltip>
                       </div>
                     </el-form-item>
 
@@ -903,29 +924,50 @@
                     </el-form-item>
 
                     <el-form-item label="操作" v-if="syncConfig.provider === 'gitlab'">
-                      <div style="display: flex; gap: 8px">
-                        <el-button
-                          type="primary"
-                          :loading="syncState.syncing"
-                          :disabled="!hasSyncEncryptionPassword"
-                          @click="doSync"
+                      <div class="sync-action-buttons">
+                        <el-tooltip
+                          content="比较本地和云端数据，自动选择上传或下载；两边都变化时会提示手动选择"
+                          placement="top"
                         >
-                          立即同步
-                        </el-button>
-                        <el-button
-                          :loading="syncState.uploadingGitLab"
-                          :disabled="!hasSyncEncryptionPassword"
-                          @click="doUploadGitLab"
+                          <span>
+                            <el-button
+                              type="primary"
+                              :icon="Refresh"
+                              :loading="syncState.syncing"
+                              :disabled="!canSmartSyncGitLab"
+                              @click="doSync"
+                            >
+                              智能同步
+                            </el-button>
+                          </span>
+                        </el-tooltip>
+                        <el-tooltip
+                          content="用本地数据更新云端同步数据；云端已有数据时会被覆盖"
+                          placement="top"
                         >
-                          上传到云端
-                        </el-button>
-                        <el-button
-                          :loading="syncState.downloadingGitLab"
-                          :disabled="!hasSyncEncryptionPassword || !syncConfig.gitlab?.snippetId"
-                          @click="doDownloadGitLab"
-                        >
-                          从云端下载
-                        </el-button>
+                          <span>
+                            <el-button
+                              :icon="Upload"
+                              :loading="syncState.uploadingGitLab"
+                              :disabled="!hasSyncEncryptionPassword"
+                              @click="doUploadGitLab"
+                            >
+                              {{ syncConfig.gitlab?.snippetId ? '覆盖云端' : '上传到云端' }}
+                            </el-button>
+                          </span>
+                        </el-tooltip>
+                        <el-tooltip content="用云端同步数据覆盖本地数据" placement="top">
+                          <span>
+                            <el-button
+                              :icon="Download"
+                              :loading="syncState.downloadingGitLab"
+                              :disabled="!hasSyncEncryptionPassword || !syncConfig.gitlab?.snippetId"
+                              @click="doDownloadGitLab"
+                            >
+                              覆盖本地
+                            </el-button>
+                          </span>
+                        </el-tooltip>
                       </div>
                     </el-form-item>
 
@@ -1265,7 +1307,7 @@
 <script setup lang="ts">
 import { ref, onMounted, toRaw, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Download, Upload, Lock, Unlock } from '@element-plus/icons-vue'
+import { Download, Upload, Refresh, Lock, Unlock } from '@element-plus/icons-vue'
 import { themes } from '@/utils/terminal-themes'
 import { keyboardShortcutManager, type ShortcutConfig } from '@/utils/keyboard-shortcuts'
 import {
@@ -1455,6 +1497,18 @@ const hasSyncEncryptionPassword = computed(
   () =>
     !!syncEncryptionPasswordInput.value ||
     syncConfig.value.encryptionPassword === SYNC_SECRET_CONFIGURED
+)
+const canSmartSyncGitHub = computed(
+  () =>
+    hasSyncEncryptionPassword.value &&
+    syncConfig.value.enabled &&
+    syncConfig.value.provider === 'github'
+)
+const canSmartSyncGitLab = computed(
+  () =>
+    hasSyncEncryptionPassword.value &&
+    syncConfig.value.enabled &&
+    syncConfig.value.provider === 'gitlab'
 )
 
 // 快捷键相关状态
@@ -2161,6 +2215,10 @@ const doSync = async () => {
     ElMessage.warning('请先设置同步加密密码')
     return
   }
+  if (!syncConfig.value.enabled) {
+    ElMessage.warning('请先启用当前同步平台')
+    return
+  }
 
   syncState.value.syncing = true
 
@@ -2193,6 +2251,17 @@ const doUpload = async () => {
   if (!hasSyncEncryptionPassword.value) {
     ElMessage.warning('请先设置同步加密密码')
     return
+  }
+  if (syncConfig.value.github?.gistId) {
+    try {
+      await ElMessageBox.confirm(
+        '上传会用本地数据覆盖云端同步数据，确定要继续吗？',
+        '覆盖云端',
+        { type: 'warning' }
+      )
+    } catch {
+      return
+    }
   }
 
   syncState.value.uploading = true
@@ -2349,6 +2418,17 @@ const doUploadGitLab = async () => {
   if (!hasSyncEncryptionPassword.value) {
     ElMessage.warning('请先设置同步加密密码')
     return
+  }
+  if (syncConfig.value.gitlab?.snippetId) {
+    try {
+      await ElMessageBox.confirm(
+        '上传会用本地数据覆盖云端同步数据，确定要继续吗？',
+        '覆盖云端',
+        { type: 'warning' }
+      )
+    } catch {
+      return
+    }
   }
 
   syncState.value.uploadingGitLab = true
@@ -3130,6 +3210,12 @@ const testShortcuts = () => {
 .sync-tabs :deep(.el-tabs__item) {
   font-size: var(--text-sm);
   padding: 0 16px;
+}
+
+.sync-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 /* 头部 */

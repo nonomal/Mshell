@@ -189,7 +189,6 @@
                   </div>
                   <div class="pane-content">
                     <TerminalTab
-                      ref="terminalTabRefs"
                       :connection-id="tab.id"
                       :session="tab.session"
                       :terminal-options="appStore.terminalOptions"
@@ -356,7 +355,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed, watch } from 'vue'
+import { onMounted, onUnmounted, ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Connection,
@@ -373,7 +372,6 @@ import { useAIStore } from '@/stores/ai'
 import { v4 as uuidv4 } from 'uuid'
 import { keyboardShortcutManager } from '@/utils/keyboard-shortcuts'
 import { useLocale } from '@/composables/useLocale'
-import { terminalManager } from '@/utils/terminal-manager'
 
 // 组件导入
 import Sidebar from './components/Common/Sidebar.vue'
@@ -414,9 +412,6 @@ const aiStore = useAIStore()
 const isLocked = ref(false)
 const lockStatusReady = ref(false)
 
-// 搜索框引用
-const searchInputRef = ref<HTMLElement | null>(null)
-
 // 分屏视图状态
 const showSplitView = ref(false)
 const showSessionList = ref(true) // 会话列表显示状态
@@ -424,7 +419,6 @@ const layoutMode = ref<'auto' | 'horizontal' | 'vertical'>('auto')
 const broadcastMode = ref(false)
 const showBatchImport = ref(false)
 const maximizedPaneId = ref<string | null>(null)
-const terminalTabRefs = ref<any[]>([])
 
 // 当前焦点的分屏索引（用于快捷键切换）
 const focusedPaneIndex = ref(0)
@@ -1087,18 +1081,6 @@ const handleConnect = async (session: SessionConfig) => {
   } catch (error) {
     console.error('Failed to update session usage stats:', error)
   }
-}
-
-const handleConvertToSplit = (connectionId: string, session: SessionConfig) => {
-  // 直接切换到分屏视图，不需要重新创建标签
-  if (sshTerminals.value.length < 2) {
-    ElMessage.warning('至少需要2个打开的SSH会话才能使用分屏视图')
-    return
-  }
-
-  showSplitView.value = true
-
-  ElMessage.success('已切换到分屏模式')
 }
 
 const handleQuickConnectSubmit = (config: {

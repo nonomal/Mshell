@@ -1,5 +1,5 @@
 
-import type { CommandDefinition, CompletionContext, CompletionItem } from '../types';
+import type { CommandDefinition } from '../types';
 
 /**
  * iptables 命令 - Linux 传统防火墙

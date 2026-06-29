@@ -77,13 +77,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // SFTP operations
   sftp: {
+    connect: (connectionId: string, options: any) =>
+      ipcRenderer.invoke('sftp:connect', connectionId, options),
     init: (connectionId: string) => ipcRenderer.invoke('sftp:init', connectionId),
     listDirectory: (connectionId: string, path: string) =>
       ipcRenderer.invoke('sftp:listDirectory', connectionId, path),
-    uploadFile: (connectionId: string, localPath: string, remotePath: string) =>
-      ipcRenderer.invoke('sftp:uploadFile', connectionId, localPath, remotePath),
-    downloadFile: (connectionId: string, remotePath: string, localPath: string) =>
-      ipcRenderer.invoke('sftp:downloadFile', connectionId, remotePath, localPath),
+    uploadFile: (
+      connectionId: string,
+      localPath: string,
+      remotePath: string,
+      options?: { resumeFromExisting?: boolean }
+    ) => ipcRenderer.invoke('sftp:uploadFile', connectionId, localPath, remotePath, options),
+    downloadFile: (
+      connectionId: string,
+      remotePath: string,
+      localPath: string,
+      options?: { resumeFromExisting?: boolean }
+    ) => ipcRenderer.invoke('sftp:downloadFile', connectionId, remotePath, localPath, options),
     createDirectory: (connectionId: string, path: string) =>
       ipcRenderer.invoke('sftp:createDirectory', connectionId, path),
     deleteFile: (connectionId: string, path: string) =>
@@ -96,11 +106,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cancelTask: (taskId: string) => ipcRenderer.invoke('sftp:cancelTask', taskId),
     uploadFiles: (
       connectionId: string,
-      files: Array<{ localPath: string; remotePath: string; taskId?: string }>
+      files: Array<{
+        localPath: string
+        remotePath: string
+        taskId?: string
+        resumeFromExisting?: boolean
+      }>
     ) => ipcRenderer.invoke('sftp:uploadFiles', connectionId, files),
     downloadFiles: (
       connectionId: string,
-      files: Array<{ remotePath: string; localPath: string; taskId?: string }>
+      files: Array<{
+        remotePath: string
+        localPath: string
+        taskId?: string
+        resumeFromExisting?: boolean
+      }>
     ) => ipcRenderer.invoke('sftp:downloadFiles', connectionId, files),
     deleteFiles: (connectionId: string, filePaths: string[]) =>
       ipcRenderer.invoke('sftp:deleteFiles', connectionId, filePaths),
@@ -738,7 +758,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
 // Type definitions for the exposed API
 export interface ElectronAPI {
   ssh: {
-    connect: (id: string, options: any) => Promise<void>
+    connect: (
+      id: string,
+      options: any
+    ) => Promise<{
+      success: boolean
+      error?: string
+      userMessage?: string
+      code?: string
+      details?: any
+    }>
     disconnect: (id: string) => Promise<void>
     write: (id: string, data: string) => void
     executeCommand: (
@@ -763,6 +792,16 @@ export interface ElectronAPI {
     import: (filePath: string) => Promise<any[]>
   }
   sftp: {
+    connect: (
+      connectionId: string,
+      options: any
+    ) => Promise<{
+      success: boolean
+      error?: string
+      userMessage?: string
+      code?: string
+      details?: any
+    }>
     init: (connectionId: string) => Promise<void>
     listDirectory: (connectionId: string, path: string) => Promise<any[]>
     uploadFile: (connectionId: string, localPath: string, remotePath: string) => Promise<void>

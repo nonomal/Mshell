@@ -1,6 +1,5 @@
 
 import type { CommandDefinition, CompletionContext, CompletionItem } from '../types';
-import { getRemoteFiles } from '../providers/file-system';
 
 /**
  * NPM 命令定义

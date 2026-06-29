@@ -14,6 +14,10 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import SplitTerminalContainer from './SplitTerminalContainer.vue'
 import { terminalManager } from '@/utils/terminal-manager'
+import {
+  createSSHConnectOptions,
+  runWithHostKeyConfirmation
+} from '@/utils/ssh-host-key-confirm'
 import type { SessionConfig } from '@/types/session'
 
 interface Props {
@@ -40,36 +44,15 @@ const handleTerminalCreate = async (terminalId: string) => {
     const settings = await window.electronAPI.settings.get()
     const sshSettings = settings?.ssh || {}
 
-    // 连接到 SSH（每个面板使用独立的连接）
-    // 注意：privateKeyId 会在后端 ssh-handlers.ts 中处理
-    // 优先使用 privateKeyId，如果没有则使用 privateKeyPath 或 privateKey
-    const result = await window.electronAPI.ssh.connect(terminalId, {
-      host: props.session.host,
-      port: props.session.port,
-      username: props.session.username,
-      password: props.session.password,
-      privateKey: props.session.privateKeyId
-        ? undefined
-        : props.session.privateKeyPath || props.session.privateKey,
-      privateKeyId: props.session.privateKeyId,
-      passphrase: props.session.passphrase,
-      // 应用 SSH 设置
-      readyTimeout: (sshSettings.timeout || 30) * 1000,
-      keepaliveInterval: sshSettings.keepalive
-        ? (sshSettings.keepaliveInterval || 60) * 1000
-        : undefined,
-      keepaliveCountMax: sshSettings.keepalive ? 3 : undefined,
-      autoReconnect: sshSettings.autoReconnect !== false,
-      maxReconnectAttempts:
-        sshSettings.autoReconnect === false ? 0 : sshSettings.maxReconnectAttempts || 3,
-      reconnectInterval: (sshSettings.reconnectInterval || 5) * 1000,
-      sessionName: props.session.name,
-      // 跳板机和代理配置 - 序列化以便 IPC 传输
-      proxyJump: props.session.proxyJump
-        ? JSON.parse(JSON.stringify(props.session.proxyJump))
-        : undefined,
-      proxy: props.session.proxy ? JSON.parse(JSON.stringify(props.session.proxy)) : undefined
-    })
+    // 连接到 SSH（每个面板使用独立的连接），主机指纹需要确认时自动弹窗并重试。
+    const result = await runWithHostKeyConfirmation(
+      (trustedHostKey) =>
+        window.electronAPI.ssh.connect(
+          terminalId,
+          createSSHConnectOptions(props.session, sshSettings, trustedHostKey)
+        ),
+      props.session.name
+    )
 
     if (result.success) {
       console.log(`[SplitTerminalTab] Terminal ${terminalId} connected`)

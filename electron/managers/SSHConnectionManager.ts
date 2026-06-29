@@ -5,7 +5,12 @@ import { appSettingsManager } from '../utils/app-settings'
 import { ErrorHandler } from '../utils/error-handler'
 import { ProxyJumpHelper } from '../utils/proxy-jump'
 import { ProxyHelper } from '../utils/proxy'
-import { verifySshHostKey } from '../utils/known-hosts'
+import {
+  getHostKeyFingerprint,
+  knownHostsManager,
+  type HostKeyChallengeDetails,
+  type TrustedHostKey
+} from '../utils/known-hosts'
 import type { ProxyJumpConfig, ProxyConfig } from '../../src/types/session'
 
 export interface SSHConnectionOptions {
@@ -24,6 +29,23 @@ export interface SSHConnectionOptions {
   sessionName?: string
   proxyJump?: ProxyJumpConfig
   proxy?: ProxyConfig
+  openShell?: boolean
+  trustedHostKey?: TrustedHostKey
+}
+
+export class HostKeyChallengeError extends Error {
+  public readonly code = 'HOST_KEY_CHALLENGE_REQUIRED'
+  public readonly details: HostKeyChallengeDetails
+
+  constructor(details: HostKeyChallengeDetails) {
+    super(
+      details.status === 'changed'
+        ? 'SSH host key changed'
+        : 'SSH host key confirmation required'
+    )
+    this.name = 'HostKeyChallengeError'
+    this.details = details
+  }
 }
 
 export interface SSHConnection {
@@ -55,15 +77,20 @@ export class SSHConnectionManager extends EventEmitter {
     this.connections = new Map()
   }
 
-  private verifyHostKey(options: SSHConnectionOptions, key: Buffer): boolean {
-    return verifySshHostKey(options.host, options.port, key)
-  }
-
   /**
    * 建立 SSH 连接
    */
   async connect(id: string, options: SSHConnectionOptions): Promise<void> {
     return new Promise(async (resolve, reject) => {
+      const existingConnection = this.connections.get(id)
+      if (existingConnection) {
+        try {
+          await this.disconnect(id)
+        } catch (error) {
+          ErrorHandler.handle(error as Error, `Disconnect existing connection ${id}`)
+        }
+      }
+
       const client = new Client()
       const settings = appSettingsManager.getSettings()
 
@@ -121,12 +148,50 @@ export class SSHConnectionManager extends EventEmitter {
       }
 
       this.connections.set(id, connection)
+      let connectSettled = false
+      let hostKeyChallenge: HostKeyChallengeDetails | undefined
+
+      const rejectWhileConnecting = (error: Error) => {
+        if (connectSettled) return
+        connectSettled = true
+        connection.status = 'error'
+        this.stopSessionMonitor(id)
+
+        if (this.connections.get(id) === connection) {
+          this.connections.delete(id)
+        }
+
+        try {
+          client.end()
+        } catch {}
+        try {
+          socket.destroy()
+        } catch {}
+
+        reject(error)
+      }
+
+      const resolveOnce = () => {
+        if (connectSettled) return
+        connectSettled = true
+        resolve()
+      }
+
+      const rejectHostKeyChallenge = () => {
+        if (!hostKeyChallenge || connectSettled) return false
+        rejectWhileConnecting(new HostKeyChallengeError(hostKeyChallenge))
+        return true
+      }
 
       // Handle socket errors
       socket.on('error', (err) => {
+        if (rejectHostKeyChallenge()) return
+
         const appError = ErrorHandler.handle(err, `SSH Connection ${id}`)
         if (connection.status === 'connecting') {
-          reject(appError)
+          this.emit('error', id, appError.userMessage)
+          rejectWhileConnecting(appError)
+          return
         }
         this.emit('error', id, appError.userMessage)
       })
@@ -135,6 +200,12 @@ export class SSHConnectionManager extends EventEmitter {
       client.on('ready', () => {
         connection.status = 'connected'
         connection.lastActivity = new Date()
+
+        if (options.openShell === false) {
+          this.startSessionMonitor(id)
+          resolveOnce()
+          return
+        }
 
         // 打开 shell，设置终端类型和环境变量
         // Open shell with window and options
@@ -157,8 +228,8 @@ export class SSHConnectionManager extends EventEmitter {
           env: {
             TERM: 'xterm-256color',
             COLORTERM: 'truecolor',
-            LANG: 'en_US.UTF-8',
-            LC_ALL: 'en_US.UTF-8'
+            LANG: 'C.UTF-8',
+            LC_CTYPE: 'C.UTF-8'
           }
         }
 
@@ -167,7 +238,7 @@ export class SSHConnectionManager extends EventEmitter {
             connection.status = 'error'
             const appError = ErrorHandler.handle(err, `SSH Shell ${id}`)
             this.emit('error', id, appError.userMessage)
-            reject(appError)
+            rejectWhileConnecting(appError)
             return
           }
 
@@ -204,23 +275,28 @@ export class SSHConnectionManager extends EventEmitter {
               // 忽略错误，PID 获取失败不影响正常使用
             })
 
-          resolve()
+          resolveOnce()
         })
       })
 
       client.on('error', (err) => {
+        if (rejectHostKeyChallenge()) return
+
         const appError = ErrorHandler.handle(err, `SSH Client ${id}`)
         this.emit('error', id, appError.userMessage)
         // 只在连接阶段（connecting）才 reject Promise，避免已连接后的错误重复 reject
         if (connection.status === 'connecting') {
-          connection.status = 'error'
-          reject(appError)
+          rejectWhileConnecting(appError)
         } else {
           connection.status = 'error'
         }
       })
 
       client.on('close', () => {
+        if (connectSettled && this.connections.get(id) !== connection) {
+          return
+        }
+
         connection.status = 'disconnected'
         this.stopSessionMonitor(id)
         this.emit('close', id)
@@ -247,7 +323,55 @@ export class SSHConnectionManager extends EventEmitter {
         readyTimeout: readyTimeout || 20000,
         keepaliveInterval: keepaliveInterval,
         keepaliveCountMax: options.keepaliveCountMax || 3,
-        hostVerifier: (key: Buffer) => this.verifyHostKey(options, key)
+        hostVerifier: (key: Buffer, callback: (permitted: boolean) => void) => {
+          if (settings.security.verifyHostKey === false) {
+            callback(true)
+            return
+          }
+
+          if (
+            knownHostsManager.isTrustedHostKey(options.host, options.port, key, options.trustedHostKey)
+          ) {
+            knownHostsManager.addHost(
+              options.host,
+              options.port,
+              options.trustedHostKey?.keyType,
+              key
+            )
+            callback(true)
+            return
+          }
+
+          const verifyResult = knownHostsManager.verifyHost(
+            options.host,
+            options.port,
+            undefined,
+            key
+          )
+
+          if (verifyResult === 'trusted') {
+            callback(true)
+            return
+          }
+
+          hostKeyChallenge = knownHostsManager.createChallenge(
+            options.host,
+            options.port,
+            undefined,
+            key,
+            verifyResult
+          )
+
+          if (verifyResult === 'changed') {
+            const receivedFingerprint = getHostKeyFingerprint(key)
+            const knownHost = knownHostsManager.getHost(options.host, options.port)
+            console.error(
+              `[KnownHosts] Host key mismatch for ${options.host}:${options.port}. Known=${knownHost?.fingerprint}, received=${receivedFingerprint}`
+            )
+          }
+
+          callback(false)
+        }
       }
 
       if (options.password) {

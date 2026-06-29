@@ -45,7 +45,6 @@ const handleDragEnter = (event: DragEvent) => {
 
 const handleDragLeave = (event: DragEvent) => {
   // 只有当离开整个组件时才设置�?false
-  const target = event.target as HTMLElement
   const currentTarget = event.currentTarget as HTMLElement
   
   if (!currentTarget.contains(event.relatedTarget as Node)) {

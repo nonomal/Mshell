@@ -1,5 +1,5 @@
 
-import type { CommandDefinition, CompletionContext, CompletionItem } from '../types';
+import type { CommandDefinition } from '../types';
 
 /**
  * certbot 命令 - Let's Encrypt 证书管理

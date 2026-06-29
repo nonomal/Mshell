@@ -310,7 +310,7 @@ export class TaskSchedulerManager {
   /**
    * 计算下次执行时间（简单估算，基于当前时间 + cron 间隔）
    */
-  private getNextExecutionTime(cronExpression: string): string {
+  private getNextExecutionTime(_cronExpression: string): string {
     try {
       // node-cron 没有直接提供 next() 方法，用简单的 +1分钟 作为占位
       // 实际下次执行时间由 cron 调度器决定
@@ -354,7 +354,6 @@ export class TaskSchedulerManager {
     }
 
     // 将脚本内容通过 heredoc 方式传给 bash 执行
-    const escapedScript = task.script!.replace(/'/g, "'\\''")
     const command = `bash -s << 'MSHELL_SCRIPT_EOF'\n${task.script}\nMSHELL_SCRIPT_EOF`
 
     return new Promise((resolve, reject) => {

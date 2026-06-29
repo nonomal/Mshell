@@ -25,6 +25,10 @@ import java.util.concurrent.Executors;
 public class AndroidSshBridge extends Plugin {
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int COMMAND_TIMEOUT_MS = 60000;
+    private static final String PUBLIC_KEY_ALGORITHMS =
+        "ssh-ed25519,ssh-ed448,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,rsa-sha2-512,rsa-sha2-256,ssh-rsa";
+    private static final String SERVER_HOST_KEY_ALGORITHMS =
+        "ssh-ed25519,ssh-ed448,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,rsa-sha2-512,rsa-sha2-256,ssh-rsa";
 
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private final Map<String, Session> sessions = new ConcurrentHashMap<>();
@@ -228,6 +232,8 @@ public class AndroidSshBridge extends Plugin {
         Session session = jsch.getSession(username, host, port);
         session.setConfig("StrictHostKeyChecking", "no");
         session.setConfig("PreferredAuthentications", "publickey,password,keyboard-interactive");
+        session.setConfig("PubkeyAcceptedAlgorithms", PUBLIC_KEY_ALGORITHMS);
+        session.setConfig("server_host_key", SERVER_HOST_KEY_ALGORITHMS);
 
         if (!"privateKey".equals(authType)) {
             session.setPassword(sessionConfig.optString("password", ""));

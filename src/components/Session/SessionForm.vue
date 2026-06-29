@@ -804,7 +804,7 @@ const handleSave = async () => {
         // 服务器管理字段
         provider: form.provider || undefined,
         region: form.region || undefined,
-        expiryDate: form.expiryDate || undefined, // 保持字符串格式
+        expiryDate: form.expiryDate ? new Date(form.expiryDate) : undefined,
         billingCycle: form.billingCycle || undefined,
         billingAmount: form.billingAmount,
         billingCurrency: form.billingCurrency || 'CNY',

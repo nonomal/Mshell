@@ -314,7 +314,7 @@ const parseSimpleFormat = (line: string): ParsedSession | null => {
 }
 
 // 智能解析单行
-const parseLine = (line: string, lineNum: number): ParsedSession | null => {
+const parseLine = (line: string, _lineNum: number): ParsedSession | null => {
   line = line.trim()
   if (!line || line.startsWith('#') || line.startsWith('//')) return null
 
@@ -428,7 +428,7 @@ const handleImport = async () => {
           port: session.port,
           username: session.username,
           password: session.password,
-          authType: session.password ? 'password' : 'none',
+          authType: 'password',
           group: groupId  // SessionConfig 使用 group 字段存储 groupId
         })
         if (result.success) {

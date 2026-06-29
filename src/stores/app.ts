@@ -3,10 +3,24 @@ import { ref, computed } from 'vue'
 import type { SessionConfig, SessionGroup } from '@/types/session'
 import { terminalShortcutsManager } from '@/utils/terminal-shortcuts'
 
+export type ActiveView =
+  | 'sessions'
+  | 'templates'
+  | 'sftp'
+  | 'port-forward'
+  | 'snippets'
+  | 'statistics'
+  | 'tasks'
+  | 'workflows'
+  | 'keys'
+  | 'logs'
+  | 'settings'
+
 export interface Tab {
   id: string
   name: string
   session: SessionConfig
+  isSplit?: boolean
 }
 
 export interface TerminalOptions {
@@ -26,9 +40,11 @@ export interface TerminalOptions {
  */
 export const useAppStore = defineStore('app', () => {
   // ============ 视图状态 ============
-  const activeView = ref<
-    'sessions' | 'sftp' | 'port-forward' | 'snippets' | 'statistics' | 'logs' | 'settings'
-  >('sessions')
+  const activeView = ref<ActiveView>('sessions')
+
+  function setActiveView(view: ActiveView) {
+    activeView.value = view
+  }
 
   // ============ 标签页管理 ============
   const tabs = ref<Tab[]>([])
@@ -141,7 +157,7 @@ export const useAppStore = defineStore('app', () => {
   // 创建会话
   async function createSession(config: Partial<SessionConfig>) {
     const result = await window.electronAPI.session.create(config)
-    if (result.success) {
+    if (result.success && result.data) {
       sessions.value.push(result.data)
       await loadSessions() // 重新加载以确保分组正确
       return result.data
@@ -291,6 +307,7 @@ export const useAppStore = defineStore('app', () => {
   return {
     // 视图状态
     activeView,
+    setActiveView,
 
     // 标签页
     tabs,

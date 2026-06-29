@@ -1494,7 +1494,7 @@ const loadPrivateKeyFile = async (event: Event) => {
   if (!content) return
   keyForm.privateKeyContent = content
   keyForm.type = detectKeyType(content)
-  keyForm.protected = keyForm.protected || /ENCRYPTED|Proc-Type: 4,ENCRYPTED/i.test(content)
+  keyForm.protected = keyForm.protected || isEncryptedPrivateKey(content)
   if (!keyForm.name) {
     keyForm.name = selectedFileName(event)
   }
@@ -1527,7 +1527,7 @@ const importSessionKeyFile = async (event: Event) => {
     fingerprint: await createFingerprint(content),
     createdAt: new Date().toISOString(),
     usageCount: 0,
-    protected: /ENCRYPTED|Proc-Type: 4,ENCRYPTED/i.test(content),
+    protected: isEncryptedPrivateKey(content),
     privateKeyContent: content,
     publicKeyContent: publicKey
   }
@@ -1587,9 +1587,52 @@ const selectedFileName = (event: Event): string => {
 }
 
 const detectKeyType = (content: string): MobileSSHKey['type'] => {
+  const normalized = content.trim()
+  if (/^ssh-ed25519\s/i.test(normalized)) return 'ed25519'
+  if (/^ecdsa-sha2-nistp/i.test(normalized)) return 'ecdsa'
+  if (/^ssh-rsa\s/i.test(normalized)) return 'rsa'
+
   if (/ed25519/i.test(content)) return 'ed25519'
   if (/ecdsa|EC PRIVATE KEY/i.test(content)) return 'ecdsa'
+
+  const opensshPayload = decodeOpenSshPrivateKey(content)
+  if (opensshPayload.includes('ssh-ed25519')) return 'ed25519'
+  if (opensshPayload.includes('ecdsa-sha2-nistp')) return 'ecdsa'
+
   return 'rsa'
+}
+
+const isEncryptedPrivateKey = (content: string): boolean => {
+  if (/ENCRYPTED|Proc-Type: 4,ENCRYPTED/i.test(content)) return true
+
+  const opensshPayload = decodeOpenSshPrivateKey(content)
+  if (!opensshPayload.startsWith('openssh-key-v1')) return false
+
+  const cipherName = readOpenSshString(opensshPayload, 'openssh-key-v1'.length + 1)
+  return Boolean(cipherName && cipherName !== 'none')
+}
+
+const decodeOpenSshPrivateKey = (content: string): string => {
+  const match = content.match(/-----BEGIN OPENSSH PRIVATE KEY-----([\s\S]+?)-----END OPENSSH PRIVATE KEY-----/i)
+  if (!match) return ''
+
+  try {
+    return atob(match[1].replace(/\s+/g, ''))
+  } catch {
+    return ''
+  }
+}
+
+const readOpenSshString = (payload: string, offset: number): string => {
+  if (offset + 4 > payload.length) return ''
+  const length =
+    (payload.charCodeAt(offset) << 24) |
+    (payload.charCodeAt(offset + 1) << 16) |
+    (payload.charCodeAt(offset + 2) << 8) |
+    payload.charCodeAt(offset + 3)
+  const start = offset + 4
+  const end = start + length
+  return length >= 0 && end <= payload.length ? payload.slice(start, end) : ''
 }
 
 const formatDateInput = (value?: Date): string => {

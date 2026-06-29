@@ -299,7 +299,6 @@
 
         <!-- 命令解释 -->
         <CommandExplain
-          ref="commandExplainRef"
           :visible="showCommandExplain"
           :command="explainCommand"
           :position="autocompleteCursorPosition"
@@ -508,6 +507,10 @@ import {
   shouldShowInlineSuggestion
 } from '@/utils/autocomplete/inline-suggest'
 import { isExplainQuery, parseExplainQuery } from '@/utils/command-intelligence'
+import {
+  createSSHConnectOptions,
+  runWithHostKeyConfirmation
+} from '@/utils/ssh-host-key-confirm'
 import type { SessionConfig as BaseSessionConfig } from '@/types/session'
 import { useAppStore } from '@/stores/app'
 
@@ -635,7 +638,6 @@ const aiCommandSuggestRef = ref()
 // 命令智能功能
 const showCommandExplain = ref(false)
 const explainCommand = ref('')
-const commandExplainRef = ref()
 
 // 命令智能设置（从设置中加载）
 const commandIntelligenceSettings = ref({
@@ -933,10 +935,19 @@ const handleManualReconnect = async () => {
       // 忽略断开错误
     }
 
-    // 重新连接 - 序列化 session 以便 IPC 传输
+    const settings = await window.electronAPI.settings.get()
+    const sshSettings = settings?.ssh || {}
+
+    // 重新连接，遇到新的或变化的主机指纹时先让用户确认，确认后自动重试连接
     connectionStatus.value = 'connecting'
-    const sessionData = JSON.parse(JSON.stringify(props.session))
-    const result = await window.electronAPI.ssh.connect(props.connectionId, sessionData)
+    const result = await runWithHostKeyConfirmation(
+      (trustedHostKey) =>
+        window.electronAPI.ssh.connect(
+          props.connectionId,
+          createSSHConnectOptions(props.session, sshSettings, trustedHostKey)
+        ),
+      props.session.name
+    )
 
     if (result.success) {
       connectionStatus.value = 'connected'
@@ -1164,36 +1175,15 @@ onMounted(async () => {
     // 加载命令智能设置（使用统一函数）
     await loadCommandIntelligenceSettings()
 
-    // Connect to SSH
-    // 注意：privateKeyId 会在后端 ssh-handlers.ts 中处理
-    // 优先使用 privateKeyId，如果没有则使用 privateKeyPath 或 privateKey
-    const result = await window.electronAPI.ssh.connect(props.connectionId, {
-      host: props.session.host,
-      port: props.session.port,
-      username: props.session.username,
-      password: props.session.password,
-      privateKey: props.session.privateKeyId
-        ? undefined
-        : props.session.privateKeyPath || props.session.privateKey,
-      privateKeyId: props.session.privateKeyId,
-      passphrase: props.session.passphrase,
-      // 应用 SSH 设置
-      readyTimeout: (sshSettings.timeout || 30) * 1000, // 转换为毫秒
-      keepaliveInterval: sshSettings.keepalive
-        ? (sshSettings.keepaliveInterval || 60) * 1000
-        : undefined,
-      keepaliveCountMax: sshSettings.keepalive ? 3 : undefined,
-      autoReconnect: sshSettings.autoReconnect !== false,
-      maxReconnectAttempts:
-        sshSettings.autoReconnect === false ? 0 : sshSettings.maxReconnectAttempts || 3,
-      reconnectInterval: (sshSettings.reconnectInterval || 5) * 1000,
-      sessionName: props.session.name,
-      // 跳板机和代理配置 - 序列化以便 IPC 传输
-      proxyJump: props.session.proxyJump
-        ? JSON.parse(JSON.stringify(props.session.proxyJump))
-        : undefined,
-      proxy: props.session.proxy ? JSON.parse(JSON.stringify(props.session.proxy)) : undefined
-    })
+    // Connect to SSH. 新主机/主机指纹变化时，确认后自动保存指纹并重试连接。
+    const result = await runWithHostKeyConfirmation(
+      (trustedHostKey) =>
+        window.electronAPI.ssh.connect(
+          props.connectionId,
+          createSSHConnectOptions(props.session, sshSettings, trustedHostKey)
+        ),
+      props.session.name
+    )
 
     if (result.success) {
       isConnected.value = true
@@ -1342,10 +1332,6 @@ const handleAIRequest = async (text: string) => {
   if (terminalAIRef.value) {
     terminalAIRef.value.performAction(text)
   }
-}
-
-const handleClose = () => {
-  emit('close', props.connectionId)
 }
 
 const handleFontChange = async (fontFamily: string) => {
@@ -1863,24 +1849,6 @@ const handleAICommandEdit = (command: string) => {
   setTimeout(() => terminalRef.value?.focus(), 50)
 }
 
-// ========== 命令智能功能 ==========
-
-// 处理命令解释查询（? 触发）
-const handleExplainQuery = (input: string) => {
-  // 检查开关是否开启
-  if (!commandIntelligenceSettings.value.commandExplain) return false
-
-  if (isExplainQuery(input)) {
-    const command = parseExplainQuery(input)
-    if (command) {
-      explainCommand.value = command
-      showCommandExplain.value = true
-      return true
-    }
-  }
-  return false
-}
-
 // 处理 SSH 输出（预留接口）
 const handleSSHOutput = (_output: string) => {
   // 预留接口，可用于未来扩展
@@ -2306,12 +2274,14 @@ defineExpose({
 .snippet-panel-content {
   flex: 1;
   display: flex;
+  min-height: 0;
   overflow: hidden;
 }
 
 /* 左侧分类区域 */
 .snippet-categories {
   width: 140px;
+  min-height: 0;
   flex-shrink: 0;
   border-right: 1px solid var(--border-color);
   background: var(--bg-main);
@@ -2334,11 +2304,6 @@ defineExpose({
   text-transform: uppercase;
   padding: 0 10px 6px;
   letter-spacing: 0.5px;
-}
-
-.category-list {
-  max-height: 200px;
-  overflow-y: auto;
 }
 
 .category-item {

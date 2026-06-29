@@ -2,11 +2,13 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { app } from 'electron'
 
+type LogCategory = 'connection' | 'sftp' | 'system' | 'session' | 'proxy' | 'proxy-jump'
+
 export interface LogEntry {
   id: string
   timestamp: string | Date
   level: 'info' | 'warn' | 'error'
-  category: 'connection' | 'sftp' | 'system' | 'session'
+  category: LogCategory
   sessionId?: string
   sessionName?: string
   host?: string
@@ -79,7 +81,7 @@ class Logger {
     })
   }
 
-  logInfo(category: 'connection' | 'sftp' | 'system' | 'session', message: string, details?: string): void {
+  logInfo(category: LogCategory, message: string, details?: string): void {
     const { v4: uuidv4 } = require('uuid')
     this.writeLog({
       id: uuidv4(),
@@ -91,7 +93,7 @@ class Logger {
     })
   }
 
-  logError(category: 'connection' | 'sftp' | 'system' | 'session', message: string, error: Error): void {
+  logError(category: LogCategory, message: string, error: Error): void {
     const { v4: uuidv4 } = require('uuid')
     this.writeLog({
       id: uuidv4(),

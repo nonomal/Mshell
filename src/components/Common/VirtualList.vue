@@ -39,6 +39,12 @@
 import { ref, computed } from 'vue'
 import VirtualScroll from './VirtualScroll.vue'
 
+type VirtualScrollExpose = {
+  scrollToIndex: (index: number, behavior?: ScrollBehavior) => void
+  scrollToTop: (behavior?: ScrollBehavior) => void
+  scrollToBottom: (behavior?: ScrollBehavior) => void
+}
+
 interface Props {
   items: T[]
   itemHeight: number
@@ -62,7 +68,7 @@ defineEmits<{
   loadMore: []
 }>()
 
-const virtualScrollRef = ref<InstanceType<typeof VirtualScroll>>()
+const virtualScrollRef = ref<VirtualScrollExpose>()
 
 // 过滤后的项目
 const filteredItems = computed(() => {

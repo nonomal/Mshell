@@ -282,9 +282,6 @@ const inputRef = ref<any>()
 const currentRequestId = ref<string>('')
 const selectedModelId = ref<string>('') // 当前终端选择的模型 ID
 
-// 可用模型列表
-const availableModels = computed(() => aiStore.models)
-
 // 当前选择的模型
 const selectedModel = computed(() => {
   if (selectedModelId.value) {
@@ -641,12 +638,6 @@ const confirmModelSelection = () => {
     localStorage.setItem(storageKey, dialogSelectedModelId.value)
   }
   showModelDialog.value = false
-}
-
-// 获取渠道名称
-const getChannelName = (channelId: string) => {
-  const channel = aiStore.channels.find(c => c.id === channelId)
-  return channel?.name || ''
 }
 
 // 是否可以重新生成（最后一条是 AI 消息且不在加载中）

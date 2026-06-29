@@ -37,6 +37,7 @@
 import { registry } from '@/utils/autocomplete/registry'
 import { getRemotePathSuggestions as fetchRemotePaths } from '@/utils/autocomplete/providers/file-system'
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import type { CSSProperties } from 'vue'
 
 interface Suggestion {
   text: string
@@ -55,6 +56,10 @@ interface Props {
   input: string
   cursorPosition: { x: number; y: number }
   sessionId: string
+}
+
+type PopupStyle = CSSProperties & {
+  '--slide-direction'?: string
 }
 
 const props = defineProps<Props>()
@@ -89,7 +94,7 @@ const instanceId = ref(`autocomplete-${Date.now()}-${Math.random().toString(36).
 let lastProcessedInput = ''
 
 // 计算弹窗位置，智能避免遮挡光标和溢出屏幕
-const popupStyle = computed(() => {
+const popupStyle = computed<PopupStyle>(() => {
   const cursorX = props.cursorPosition.x
   const cursorY = props.cursorPosition.y
   

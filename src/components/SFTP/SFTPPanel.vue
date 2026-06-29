@@ -249,8 +249,30 @@
       </div>
     </div>
 
-    <!-- 底部：传输队列 -->
-    <div v-if="transfers.length > 0 || incompleteTransfers.length > 0" class="transfer-queue">
+    <!-- 传输队列入口 -->
+    <div class="transfer-queue-entry">
+      <el-tooltip :content="queueEntryTooltip" placement="left">
+        <el-button
+          class="queue-entry-button"
+          :type="queueAttentionCount > 0 ? 'primary' : 'default'"
+          :icon="Upload"
+          @click="showTransferQueueDialog = true"
+        >
+          <span>传输队列</span>
+          <span v-if="queueAttentionCount > 0" class="queue-entry-badge">
+            {{ queueAttentionCount }}
+          </span>
+        </el-button>
+      </el-tooltip>
+    </div>
+
+    <el-dialog
+      v-model="showTransferQueueDialog"
+      title="传输队列"
+      width="min(960px, 92vw)"
+      class="transfer-queue-dialog"
+    >
+      <div class="transfer-queue">
       <div class="queue-header">
         <el-tabs v-model="activeQueueTab" class="queue-tabs">
           <el-tab-pane label="当前传输" name="current">
@@ -325,7 +347,7 @@
             </div>
             <div class="transfer-status">
               <span :class="['status-text', transfer.status]">{{
-                getStatusText(transfer.status)
+                getTransferStatusText(transfer)
               }}</span>
               <span v-if="transfer.status === 'active'" class="transfer-speed">{{
                 formatSpeed(transfer.speed)
@@ -394,6 +416,8 @@
           </div>
           <el-progress
             :percentage="transfer.progress"
+            :format="formatProgressText"
+            :precision="2"
             :status="
               transfer.status === 'failed'
                 ? 'exception'
@@ -404,6 +428,10 @@
                     : undefined
             "
           />
+          <div v-if="transfer.status === 'active'" class="transfer-progress-meta">
+            <span>{{ formatTransferAmount(transfer) }}</span>
+            <span v-if="transfer.eta > 0">剩余 {{ formatEta(transfer.eta) }}</span>
+          </div>
         </div>
       </div>
 
@@ -464,7 +492,13 @@
             </div>
           </div>
           <el-progress
-            :percentage="(record.transferred / record.totalSize) * 100"
+            :percentage="
+              normalizeProgressPercentage(
+                calculateProgressPercentage(record.transferred, record.totalSize)
+              )
+            "
+            :format="formatProgressText"
+            :precision="2"
             status="warning"
           />
         </div>
@@ -525,7 +559,8 @@
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </el-dialog>
 
     <!-- 新建远程文件夹对话框 -->
     <el-dialog v-model="showCreateRemoteFolderDialog" title="新建远程文件夹" width="400px">
@@ -637,12 +672,69 @@
       :connection-id="currentSession?.id || ''"
       @download="handlePreviewDownload"
     />
+
+    <el-dialog
+      :model-value="Boolean(transferConflictDialog)"
+      :title="transferConflictDialog?.direction === 'upload' ? '上传冲突' : '下载冲突'"
+      width="460px"
+      @close="handleTransferConflictClosed"
+    >
+      <div v-if="transferConflictDialog" class="transfer-conflict">
+        <p class="conflict-title">
+          目标位置已存在同名{{ formatConflictTargetType(transferConflictDialog.targetType) }}
+          "{{ transferConflictDialog.fileName }}"
+        </p>
+        <div class="conflict-details">
+          <div>
+            <span>源文件</span>
+            <strong>{{ formatSize({ size: transferConflictDialog.sourceSize }) }}</strong>
+          </div>
+          <div>
+            <span>目标文件</span>
+            <strong>
+              {{
+                transferConflictDialog.targetSize !== undefined
+                  ? formatSize({ size: transferConflictDialog.targetSize })
+                  : '未知大小'
+              }}
+            </strong>
+          </div>
+          <div>
+            <span>目标路径</span>
+            <strong>{{ transferConflictDialog.targetPath }}</strong>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <el-button @click="resolveTransferConflictAction('skip')">跳过</el-button>
+        <el-button @click="resolveTransferConflictAction('rename')">重命名</el-button>
+        <el-button
+          v-if="transferConflictDialog?.canResume"
+          type="warning"
+          @click="resolveTransferConflictAction('resume')"
+        >
+          续传
+        </el-button>
+        <el-button
+          v-if="transferConflictDialog?.canOverwrite"
+          type="primary"
+          @click="resolveTransferConflictAction('overwrite')"
+        >
+          覆盖
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
+import {
+  createSSHConnectOptions,
+  runWithHostKeyConfirmation
+} from '@/utils/ssh-host-key-confirm'
 import {
   Connection,
   FolderOpened,
@@ -669,12 +761,12 @@ import type { SessionConfig } from '@/types/session'
 import FilePreview from './FilePreview.vue'
 import FileDropZone from './FileDropZone.vue'
 import VirtualTable from '../Common/VirtualTable.vue'
-import type { Column } from '../Common/VirtualTable.vue'
+import type { Column } from '../Common/virtual-table.types'
 import { useLocale } from '@/composables/useLocale'
 import { formatSftpOperationError } from '@/utils/sftp-errors'
 
 // 国际化和格式化
-const { t, formatBytes: formatBytesLocale, formatDateTime, formatRelativeTime } = useLocale()
+const { formatBytes: formatBytesLocale, formatDateTime } = useLocale()
 
 interface FileInfo {
   name: string
@@ -689,16 +781,21 @@ interface Transfer {
   id: string
   name: string
   type: 'upload' | 'download'
-  status: 'pending' | 'active' | 'paused' | 'completed' | 'failed'
+  status: 'pending' | 'active' | 'paused' | 'completed' | 'failed' | 'cancelled'
   progress: number
   speed: number
   eta: number
+  transferred: number
+  total: number
+  lastProgressAt: number
+  stalled: boolean
   targetPath: string
   localPath?: string
   remotePath?: string
   priority?: number // 优先级：1-5，数字越大优先级越高
   startTime?: Date
   endTime?: Date
+  error?: string
 }
 
 interface TransferRecord {
@@ -728,6 +825,57 @@ interface TransferHistoryItem {
   localPath: string
   remotePath: string
   error?: string
+}
+
+interface TransferBatchResult {
+  success: string[]
+  failed: Array<{ path: string; error: string }>
+  paused: string[]
+}
+
+interface TransferBatchItem {
+  path: string
+  transferId: string
+}
+
+type TransferConflictAction = 'overwrite' | 'skip' | 'rename' | 'resume'
+type TransferConflictTargetType = 'file' | 'directory' | 'queued'
+
+interface TransferConflictContext {
+  direction: 'upload' | 'download'
+  fileName: string
+  sourcePath: string
+  targetPath: string
+  sourceSize: number
+  targetSize?: number
+  targetType: TransferConflictTargetType
+  canOverwrite: boolean
+  canResume: boolean
+  existingNames: string[]
+  caseSensitive: boolean
+}
+
+interface TransferConflictChoice {
+  action: TransferConflictAction
+  fileName?: string
+}
+
+interface UploadTransferPlan {
+  name: string
+  localPath: string
+  remotePath: string
+  taskId: string
+  total: number
+  resumeFromExisting?: boolean
+}
+
+interface DownloadTransferPlan {
+  name: string
+  remotePath: string
+  localPath: string
+  taskId: string
+  total: number
+  resumeFromExisting?: boolean
 }
 
 const sessions = ref<SessionConfig[]>([])
@@ -790,12 +938,112 @@ const transfers = ref<Transfer[]>([])
 const incompleteTransfers = ref<TransferRecord[]>([])
 const transferHistory = ref<TransferHistoryItem[]>([])
 const activeQueueTab = ref<'current' | 'incomplete' | 'history'>('current')
+const transferConflictDialog = ref<TransferConflictContext | null>(null)
+let transferConflictResolver: ((choice: TransferConflictChoice) => void) | null = null
+
+const normalizeTransferBatchResult = (
+  result?: Partial<TransferBatchResult>
+): TransferBatchResult => ({
+  success: result?.success || [],
+  failed: result?.failed || [],
+  paused: result?.paused || []
+})
+
+const resetTransferRuntimeState = (transfer: Transfer) => {
+  transfer.speed = 0
+  transfer.eta = 0
+  transfer.stalled = false
+}
+
+const markTransferCompleted = (transfer: Transfer) => {
+  if (transfer.status === 'completed' || transfer.status === 'cancelled') return
+
+  transfer.status = 'completed'
+  transfer.progress = 100
+  transfer.transferred = transfer.total || transfer.transferred
+  resetTransferRuntimeState(transfer)
+  transfer.endTime = new Date()
+  addToHistory(transfer)
+}
+
+const markTransferFailed = (transfer: Transfer, error?: string) => {
+  if (transfer.status === 'failed' || transfer.status === 'cancelled') return
+
+  transfer.status = 'failed'
+  transfer.error = error
+  resetTransferRuntimeState(transfer)
+  transfer.endTime = new Date()
+  addToHistory(transfer)
+}
+
+const markTransferPaused = (transfer: Transfer) => {
+  if (transfer.status === 'completed' || transfer.status === 'failed' || transfer.status === 'cancelled') {
+    return
+  }
+
+  transfer.status = 'paused'
+  resetTransferRuntimeState(transfer)
+}
+
+const findTransferFromBatchPath = (path: string, items: TransferBatchItem[]) => {
+  const item = items.find((entry) => entry.path === path)
+  if (!item) return undefined
+  return transfers.value.find((transfer) => transfer.id === item.transferId)
+}
+
+const markTransfersFailedByIds = (transferIds: string[], error?: string) => {
+  transferIds.forEach((id) => {
+    const transfer = transfers.value.find((item) => item.id === id)
+    if (!transfer || transfer.status === 'paused' || transfer.status === 'completed') return
+    markTransferFailed(transfer, error)
+  })
+}
+
+const applyTransferBatchResults = (
+  result: Partial<TransferBatchResult> | undefined,
+  items: TransferBatchItem[],
+  actionLabel: '上传' | '下载'
+) => {
+  const batchResult = normalizeTransferBatchResult(result)
+
+  batchResult.success.forEach((path) => {
+    const transfer = findTransferFromBatchPath(path, items)
+    if (transfer && transfer.status !== 'paused') {
+      markTransferCompleted(transfer)
+    }
+  })
+
+  batchResult.failed.forEach((failure) => {
+    const transfer = findTransferFromBatchPath(failure.path, items)
+    if (transfer) {
+      markTransferFailed(transfer, failure.error)
+    }
+  })
+
+  batchResult.paused.forEach((path) => {
+    const transfer = findTransferFromBatchPath(path, items)
+    if (transfer) {
+      markTransferPaused(transfer)
+    }
+  })
+
+  if (batchResult.success.length > 0) {
+    ElMessage.success(`成功${actionLabel} ${batchResult.success.length} 个文件`)
+  }
+  if (batchResult.paused.length > 0) {
+    ElMessage.info(`已暂停 ${batchResult.paused.length} 个传输`)
+  }
+  if (batchResult.failed.length > 0) {
+    ElMessage.error(`${batchResult.failed.length} 个文件${actionLabel}失败`)
+  }
+}
 
 // 对话框
 const showCreateRemoteFolderDialog = ref(false)
 const showCreateRemoteFileDialog = ref(false)
 const showRenameDialog = ref(false)
 const showPreview = ref(false)
+const showTransferQueueDialog = ref(false)
 const newRemoteFolderName = ref('')
 const newRemoteFileName = ref('')
 const renameValue = ref('')
@@ -841,6 +1089,23 @@ const activeTransfers = computed(() => {
   return transfers.value.filter((t) => t.status === 'active' || t.status === 'pending').length
 })
 
+const queueAttentionCount = computed(() => activeTransfers.value + incompleteTransfers.value.length)
+
+const queueEntryTooltip = computed(() => {
+  if (queueAttentionCount.value === 0) {
+    return '查看传输队列和历史记录'
+  }
+
+  const parts = []
+  if (activeTransfers.value > 0) {
+    parts.push(`${activeTransfers.value} 个进行中`)
+  }
+  if (incompleteTransfers.value.length > 0) {
+    parts.push(`${incompleteTransfers.value.length} 个未完成`)
+  }
+  return parts.join('，')
+})
+
 const isHiddenFile = (file: FileInfo) => file.name.startsWith('.') || Boolean((file as any).hidden)
 
 const visibleLocalFiles = computed(() =>
@@ -858,6 +1123,106 @@ const visibleRemoteFiles = computed(() =>
 const confirmDeleteIfNeeded = async (message: string, title = '确认删除') => {
   if (!sftpSettings.value.confirmBeforeDelete) return
   await ElMessageBox.confirm(message, title, { type: 'warning' })
+}
+
+const splitFileName = (fileName: string) => {
+  const dotIndex = fileName.lastIndexOf('.')
+  if (dotIndex <= 0) {
+    return { base: fileName, extension: '' }
+  }
+  return {
+    base: fileName.slice(0, dotIndex),
+    extension: fileName.slice(dotIndex)
+  }
+}
+
+const hasNameConflict = (name: string, existingNames: string[], caseSensitive: boolean) => {
+  if (caseSensitive) {
+    return existingNames.includes(name)
+  }
+  const normalized = name.toLocaleLowerCase()
+  return existingNames.some((existingName) => existingName.toLocaleLowerCase() === normalized)
+}
+
+const generateConflictRename = (
+  fileName: string,
+  existingNames: string[],
+  caseSensitive: boolean
+) => {
+  const { base, extension } = splitFileName(fileName)
+  let index = 1
+  let nextName = `${base} (${index})${extension}`
+
+  while (hasNameConflict(nextName, existingNames, caseSensitive)) {
+    index += 1
+    nextName = `${base} (${index})${extension}`
+  }
+
+  return nextName
+}
+
+const replacePathFileName = (path: string, fileName: string) => {
+  const index = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  if (index < 0) return fileName
+  return `${path.slice(0, index + 1)}${fileName}`
+}
+
+const formatConflictTargetType = (type: TransferConflictTargetType) => {
+  if (type === 'directory') return '目录'
+  if (type === 'queued') return '待传输文件'
+  return '文件'
+}
+
+const showTransferConflictDialog = async (
+  context: TransferConflictContext
+): Promise<TransferConflictChoice> => {
+  transferConflictDialog.value = context
+
+  const choice = await new Promise<TransferConflictChoice>((resolve) => {
+    transferConflictResolver = resolve
+  })
+
+  if (choice.action === 'rename' && !choice.fileName) {
+    const generatedName = generateConflictRename(
+      context.fileName,
+      context.existingNames,
+      context.caseSensitive
+    )
+
+    while (true) {
+      const { value } = await ElMessageBox.prompt('请输入新的文件名', '重命名传输', {
+        inputValue: generatedName,
+        inputPattern: /^(?!\s*$)[^/\\]+$/,
+        inputErrorMessage: '文件名不能为空，且不能包含 / 或 \\',
+        closeOnClickModal: false,
+        closeOnPressEscape: false
+      }).catch(() => ({ value: '' }))
+
+      if (!value) {
+        return { action: 'skip' }
+      }
+
+      if (!hasNameConflict(value, context.existingNames, context.caseSensitive)) {
+        return { action: 'rename', fileName: value }
+      }
+
+      ElMessage.warning('该名称仍然冲突，请重新输入')
+    }
+  }
+
+  return choice
+}
+
+const resolveTransferConflictAction = (action: TransferConflictAction) => {
+  const resolver = transferConflictResolver
+  transferConflictResolver = null
+  transferConflictDialog.value = null
+  resolver?.({ action })
+}
+
+const handleTransferConflictClosed = () => {
+  if (!transferConflictResolver) return
+  resolveTransferConflictAction('skip')
 }
 
 const loadSftpSettings = async () => {
@@ -952,32 +1317,48 @@ onMounted(async () => {
   // 监听传输进度事件（保存取消函数以便清理）
   const unsubProgress = window.electronAPI.sftp.onProgress((taskId: string, progress: any) => {
     const transfer = transfers.value.find((t) => t.id === taskId)
-    if (transfer) {
-      transfer.progress = progress.percentage || 0
-      transfer.speed = progress.speed || 0
-      transfer.eta = progress.eta || 0
+    if (transfer && transfer.status === 'active') {
+      transfer.transferred = normalizeByteCount(progress.transferred, transfer.transferred)
+      transfer.total = normalizeByteCount(progress.total, transfer.total)
+      transfer.progress = normalizeProgressPercentage(
+        progress.percentage ?? calculateProgressPercentage(transfer.transferred, transfer.total)
+      )
+      transfer.speed = normalizeByteCount(progress.speed)
+      transfer.eta = normalizeDurationSeconds(progress.eta)
+      transfer.lastProgressAt = Date.now()
+      transfer.stalled = false
     }
   })
 
   const unsubComplete = window.electronAPI.sftp.onComplete((taskId: string) => {
     const transfer = transfers.value.find((t) => t.id === taskId)
-    if (transfer) {
-      transfer.status = 'completed'
-      transfer.progress = 100
-      transfer.endTime = new Date()
+    if (transfer && transfer.status !== 'cancelled') {
+      markTransferCompleted(transfer)
     }
   })
 
   const unsubError = window.electronAPI.sftp.onError((taskId: string, error: string) => {
     const transfer = transfers.value.find((t) => t.id === taskId)
-    if (transfer) {
-      transfer.status = 'failed'
-      transfer.endTime = new Date()
+    if (transfer && transfer.status !== 'cancelled') {
+      markTransferFailed(transfer, error)
     }
   })
 
   // 保存清理函数
   sftpListenerCleanups.push(unsubProgress, unsubComplete, unsubError)
+
+  const transferWatchdog = window.setInterval(() => {
+    const now = Date.now()
+    transfers.value.forEach((transfer) => {
+      if (transfer.status !== 'active') return
+      if (now - transfer.lastProgressAt <= 3000) return
+
+      transfer.speed = 0
+      transfer.eta = 0
+      transfer.stalled = true
+    })
+  }, 1000)
+  sftpListenerCleanups.push(() => window.clearInterval(transferWatchdog))
 
   const unsubSettings = window.electronAPI.settings.onChange((settings: any) => {
     applySftpSettings(settings)
@@ -1019,67 +1400,45 @@ const connectSession = async (session: SessionConfig) => {
     const settings = await window.electronAPI.settings.get()
     const sshSettings = settings?.ssh || {}
 
-    // 连接到 SSH
-    // 注意：privateKeyId 会在后端 ssh-handlers.ts 中处理
-    // 优先使用 privateKeyId，如果没有则使用 privateKeyPath 或 privateKey
-    const sshResult = await window.electronAPI.ssh.connect(session.id, {
-      host: session.host,
-      port: session.port,
-      username: session.username,
-      password: session.password,
-      privateKey: session.privateKeyId ? undefined : session.privateKeyPath || session.privateKey,
-      privateKeyId: session.privateKeyId,
-      passphrase: session.passphrase,
-      // 应用 SSH 设置
-      readyTimeout: (sshSettings.timeout || 30) * 1000,
-      keepaliveInterval: sshSettings.keepalive
-        ? (sshSettings.keepaliveInterval || 60) * 1000
-        : undefined,
-      keepaliveCountMax: sshSettings.keepalive ? 3 : undefined,
-      autoReconnect: sshSettings.autoReconnect !== false,
-      maxReconnectAttempts:
-        sshSettings.autoReconnect === false ? 0 : sshSettings.maxReconnectAttempts || 3,
-      reconnectInterval: (sshSettings.reconnectInterval || 5) * 1000,
-      sessionName: session.name,
-      // 跳板机和代理配置 - 序列化以便 IPC 传输
-      proxyJump: session.proxyJump ? JSON.parse(JSON.stringify(session.proxyJump)) : undefined,
-      proxy: session.proxy ? JSON.parse(JSON.stringify(session.proxy)) : undefined
-    })
+    // 建立独立 SFTP 连接。它不依赖终端窗口，但和终端共用同一套 SSH 参数处理逻辑。
+    // 主机指纹需要确认时，确认后自动保存新指纹并重试 SFTP 连接。
+    const sftpConnectResult = await runWithHostKeyConfirmation(
+      (trustedHostKey) =>
+        window.electronAPI.sftp.connect(
+          session.id,
+          createSSHConnectOptions(session, sshSettings, trustedHostKey)
+        ),
+      session.name
+    )
 
-    if (!sshResult.success) {
+    if (!sftpConnectResult.success) {
       loadingMsg.close()
-      ElMessage.error(`SSH 连接失败: ${sshResult.error}`)
+      ElMessage.error(`SFTP 连接失败: ${sftpConnectResult.error}`)
       return
     }
 
-    const sftpResult = await window.electronAPI.sftp.init(session.id)
-    if (sftpResult.success) {
-      currentSession.value = session
+    currentSession.value = session
 
-      remotePath.value = await getRemoteHomePath(session)
+    remotePath.value = await getRemoteHomePath(session)
 
-      remotePathInput.value = remotePath.value
-      await loadFirstAccessibleRemoteDirectory([remotePath.value, '/', '/tmp'])
+    remotePathInput.value = remotePath.value
+    await loadFirstAccessibleRemoteDirectory([remotePath.value, '/', '/tmp'])
 
-      // 加载未完成的传输
-      await loadIncompleteTransfers()
+    // 加载未完成的传输
+    await loadIncompleteTransfers()
 
-      // 如果有未完成的传输，提示用户
-      if (incompleteTransfers.value.length > 0) {
-        ElNotification({
-          title: '发现未完成的传输',
-          message: `有 ${incompleteTransfers.value.length} 个未完成的传输，可以在传输队列中恢复`,
-          type: 'info',
-          duration: 5000
-        })
-      }
-
-      loadingMsg.close()
-      ElMessage.success(`已连接到 ${session.name}`)
-    } else {
-      loadingMsg.close()
-      ElMessage.error(`SFTP 连接失败: ${sftpResult.error}`)
+    // 如果有未完成的传输，提示用户
+    if (incompleteTransfers.value.length > 0) {
+      ElNotification({
+        title: '发现未完成的传输',
+        message: `有 ${incompleteTransfers.value.length} 个未完成的传输，可以在传输队列中恢复`,
+        type: 'info',
+        duration: 5000
+      })
     }
+
+    loadingMsg.close()
+    ElMessage.success(`已连接到 ${session.name}`)
   } catch (error: any) {
     loadingMsg.close()
     ElMessage.error(`连接失败: ${error.message}`)
@@ -1201,7 +1560,7 @@ const handleLocalSelectionChange = (selection: FileInfo[]) => {
 }
 
 // 本地文件单击 - 仅选择
-const handleLocalClick = (row: FileInfo) => {
+const handleLocalClick = (_row: FileInfo) => {
   // 单击只是选择，不做任何操作
   // 选择逻辑由 VirtualTable 的 selectable 属性处理
 }
@@ -1214,7 +1573,7 @@ const handleLocalDoubleClick = (row: FileInfo) => {
   }
 }
 
-const handleLocalContextMenu = async (row: FileInfo, column: any, event: MouseEvent) => {
+const handleLocalContextMenu = async (row: FileInfo, _column: any, event: MouseEvent) => {
   event.preventDefault()
 
   const menuItems = []
@@ -1413,6 +1772,151 @@ const loadFirstAccessibleRemoteDirectory = async (paths: string[]) => {
   }
 }
 
+const getRemoteDirectoryFiles = async (targetPath: string): Promise<FileInfo[]> => {
+  if (!currentSession.value) return []
+
+  const normalizedPath = normalizeRemotePath(targetPath)
+  if (normalizedPath === remotePath.value && remoteFiles.value.length > 0) {
+    return remoteFiles.value
+  }
+
+  const result = await window.electronAPI.sftp.listDirectory(currentSession.value.id, normalizedPath)
+  if (!result.success || !result.files) {
+    throw new Error(result.error || '无法读取远程目录')
+  }
+
+  return result.files.map((file: any) => ({
+    name: file.name,
+    path: `${normalizedPath}/${file.name}`.replace(/\/+/g, '/'),
+    type: file.type,
+    size: file.size,
+    modifyTime: new Date(file.modifyTime),
+    permissions: file.permissions
+  }))
+}
+
+const resolveUploadConflict = async (
+  fileName: string,
+  sourcePath: string,
+  sourceSize: number,
+  remoteFilePath: string,
+  existingFiles: FileInfo[],
+  plannedRemoteNames: string[]
+) => {
+  const existingFile = existingFiles.find((file) => file.name === fileName)
+  const queuedConflict = plannedRemoteNames.includes(fileName)
+  if (!existingFile && !queuedConflict) {
+    return {
+      action: 'overwrite' as TransferConflictAction,
+      remotePath: remoteFilePath,
+      resumeFromExisting: false
+    }
+  }
+
+  const targetType = queuedConflict
+    ? 'queued'
+    : existingFile?.type === 'directory'
+      ? 'directory'
+      : 'file'
+  const targetSize = existingFile?.type === 'file' ? existingFile.size : undefined
+  const canOverwrite = targetType === 'file'
+  const canResume = canOverwrite && targetSize !== undefined && targetSize > 0 && targetSize < sourceSize
+
+  const choice = await showTransferConflictDialog({
+    direction: 'upload',
+    fileName,
+    sourcePath,
+    targetPath: remoteFilePath,
+    sourceSize,
+    targetSize,
+    targetType,
+    canOverwrite,
+    canResume,
+    existingNames: [...existingFiles.map((file) => file.name), ...plannedRemoteNames],
+    caseSensitive: true
+  })
+
+  if (choice.action === 'skip') {
+    return { action: choice.action, remotePath: remoteFilePath, resumeFromExisting: false }
+  }
+
+  if (choice.action === 'rename' && choice.fileName) {
+    return {
+      action: choice.action,
+      remotePath: replacePathFileName(remoteFilePath, choice.fileName).replace(/\/+/g, '/'),
+      resumeFromExisting: false
+    }
+  }
+
+  return {
+    action: choice.action,
+    remotePath: remoteFilePath,
+    resumeFromExisting: choice.action === 'resume'
+  }
+}
+
+const resolveDownloadConflict = async (
+  file: FileInfo,
+  localFilePath: string,
+  existingLocalNames: string[],
+  plannedLocalNames: string[]
+) => {
+  const existingFile = localFiles.value.find(
+    (item) => item.name.toLocaleLowerCase() === file.name.toLocaleLowerCase()
+  )
+  const queuedConflict = plannedLocalNames.some(
+    (name) => name.toLocaleLowerCase() === file.name.toLocaleLowerCase()
+  )
+  if (!existingFile && !queuedConflict) {
+    return {
+      action: 'overwrite' as TransferConflictAction,
+      localPath: localFilePath,
+      resumeFromExisting: false
+    }
+  }
+
+  const targetType = queuedConflict
+    ? 'queued'
+    : existingFile?.type === 'directory'
+      ? 'directory'
+      : 'file'
+  const targetSize = existingFile?.type === 'file' ? existingFile.size : undefined
+  const canOverwrite = targetType === 'file'
+  const canResume = canOverwrite && targetSize !== undefined && targetSize > 0 && targetSize < file.size
+
+  const choice = await showTransferConflictDialog({
+    direction: 'download',
+    fileName: file.name,
+    sourcePath: file.path,
+    targetPath: localFilePath,
+    sourceSize: file.size,
+    targetSize,
+    targetType,
+    canOverwrite,
+    canResume,
+    existingNames: [...existingLocalNames, ...plannedLocalNames],
+    caseSensitive: false
+  })
+
+  if (choice.action === 'skip') {
+    return { action: choice.action, localPath: localFilePath, resumeFromExisting: false }
+  }
+
+  if (choice.action === 'rename' && choice.fileName) {
+    return {
+      action: choice.action,
+      localPath: replacePathFileName(localFilePath, choice.fileName),
+      resumeFromExisting: false
+    }
+  }
+
+  return {
+    action: choice.action,
+    localPath: localFilePath,
+    resumeFromExisting: choice.action === 'resume'
+  }
+}
+
 const goBackRemote = () => {
   const parts = remotePath.value.split('/').filter((p) => p)
   parts.pop()
@@ -1490,7 +1994,7 @@ const handleRemoteSelectionChange = (selection: FileInfo[]) => {
 }
 
 // 远程文件单击 - 仅选择
-const handleRemoteClick = (row: FileInfo) => {
+const handleRemoteClick = (_row: FileInfo) => {
   // 单击只是选择，不做任何操作
   // 选择逻辑由 VirtualTable 的 selectable 属性处理
 }
@@ -1503,7 +2007,7 @@ const handleRemoteDoubleClick = (row: FileInfo) => {
   }
 }
 
-const handleRemoteContextMenu = async (row: FileInfo, column: any, event: MouseEvent) => {
+const handleRemoteContextMenu = async (row: FileInfo, _column: any, event: MouseEvent) => {
   event.preventDefault()
 
   if (!currentSession.value) return
@@ -1670,7 +2174,7 @@ const deleteRemoteFilesMultiple = async () => {
       const filePaths = files.map((f) => f.path)
       const result = await window.electronAPI.sftp.deleteFiles(currentSession.value.id, filePaths)
 
-      if (result.success) {
+      if (result.success && result.results) {
         successCount += result.results.success.length
         failCount += result.results.failed.length
       } else {
@@ -1686,7 +2190,7 @@ const deleteRemoteFilesMultiple = async () => {
         dirPaths
       )
 
-      if (result.success) {
+      if (result.success && result.results) {
         successCount += result.results.success.length
         failCount += result.results.failed.length
       } else {
@@ -1849,8 +2353,9 @@ const confirmPermissions = async () => {
       ElMessage.error(formatSftpOperationError('权限修改', result.error, filePath))
     }
   } catch (error: any) {
+    const filePath = editingPermissions.value?.path || ''
     ElMessage.error(
-      formatSftpOperationError('权限修改', error.message, editingPermissions.value.path)
+      formatSftpOperationError('权限修改', error.message, filePath)
     )
   }
 }
@@ -1867,85 +2372,94 @@ const handleFilesDrop = async (files: File[], targetPath: string) => {
 
   ElMessage.info(`准备上传 ${files.length} 个文件...`)
 
-  // 为每个文件创建传输记录
-  const transferIds: string[] = []
+  const uploadBasePath = targetPath && targetPath !== '.' ? targetPath : remotePath.value
+  const existingFiles = await getRemoteDirectoryFiles(uploadBasePath)
+  const plannedRemoteNames: string[] = []
+  const uploadPlans: UploadTransferPlan[] = []
+  let skippedCount = 0
+
   for (const file of files) {
+    const localFilePath = file.path || file.name
+    const initialRemotePath = `${uploadBasePath}/${file.name}`.replace(/\/+/g, '/')
+    const conflict = await resolveUploadConflict(
+      file.name,
+      localFilePath,
+      file.size || 0,
+      initialRemotePath,
+      existingFiles,
+      plannedRemoteNames
+    )
+
+    if (conflict.action === 'skip') {
+      skippedCount += 1
+      continue
+    }
+
     const transferId = Date.now().toString() + Math.random()
-    transferIds.push(transferId)
+    const remoteName = conflict.remotePath.split('/').pop() || file.name
+    plannedRemoteNames.push(remoteName)
 
-    const remoteFilePath = `${remotePath.value}/${file.name}`.replace(/\/+/g, '/')
+    uploadPlans.push({
+      name: remoteName,
+      localPath: localFilePath,
+      remotePath: conflict.remotePath,
+      taskId: transferId,
+      total: file.size || 0,
+      resumeFromExisting: conflict.resumeFromExisting
+    })
+  }
 
+  if (uploadPlans.length === 0) {
+    if (skippedCount > 0) ElMessage.info(`已跳过 ${skippedCount} 个文件`)
+    return
+  }
+
+  for (const plan of uploadPlans) {
     transfers.value.push({
-      id: transferId,
-      name: file.name,
+      id: plan.taskId,
+      name: plan.name,
       type: 'upload',
       status: 'active',
       progress: 0,
       speed: 0,
       eta: 0,
-      targetPath: remoteFilePath,
-      localPath: file.path || file.name,
-      remotePath: remoteFilePath,
+      transferred: 0,
+      total: plan.total,
+      lastProgressAt: Date.now(),
+      stalled: false,
+      targetPath: plan.remotePath,
+      localPath: plan.localPath,
+      remotePath: plan.remotePath,
       priority: 3,
       startTime: new Date()
     })
   }
 
-  // 使用 FileReader 读取文件并上传
-  let successCount = 0
-  let failCount = 0
+  const transferIds = uploadPlans.map((plan) => plan.taskId)
+  const uploadFiles = uploadPlans.map((plan) => ({
+    localPath: plan.localPath,
+    remotePath: plan.remotePath,
+    taskId: plan.taskId,
+    resumeFromExisting: plan.resumeFromExisting
+  }))
 
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i]
-    const transferId = transferIds[i]
-    const transfer = transfers.value.find((t) => t.id === transferId)
+  try {
+    const result = await window.electronAPI.sftp.uploadFiles(currentSession.value.id, uploadFiles)
 
-    try {
-      // 读取文件内容
-      const arrayBuffer = await file.arrayBuffer()
-      const buffer = Buffer.from(arrayBuffer)
-
-      // 上传到远程
-      const remoteFilePath = `${remotePath.value}/${file.name}`.replace(/\/+/g, '/')
-      const result = await window.electronAPI.sftp.writeFile(
-        currentSession.value.id,
-        remoteFilePath,
-        buffer
+    if (result.success) {
+      applyTransferBatchResults(
+        result.results,
+        uploadFiles.map((file) => ({ path: file.localPath, transferId: file.taskId })),
+        '上传'
       )
-
-      if (result.success) {
-        if (transfer) {
-          transfer.status = 'completed'
-          transfer.progress = 100
-          transfer.endTime = new Date()
-          addToHistory(transfer)
-        }
-        successCount++
-      } else {
-        if (transfer) {
-          transfer.status = 'failed'
-          transfer.endTime = new Date()
-          addToHistory(transfer)
-        }
-        failCount++
-      }
-    } catch (error: any) {
-      if (transfer) {
-        transfer.status = 'failed'
-        transfer.endTime = new Date()
-        addToHistory(transfer)
-      }
-      failCount++
-      console.error(`Upload failed for ${file.name}:`, error)
+      if (skippedCount > 0) ElMessage.info(`已跳过 ${skippedCount} 个文件`)
+    } else {
+      markTransfersFailedByIds(transferIds, result.error)
+      ElMessage.error(`上传失败: ${result.error}`)
     }
-  }
-
-  // 显示结果
-  if (successCount > 0) {
-    ElMessage.success(`成功上传 ${successCount} 个文件`)
-  }
-  if (failCount > 0) {
-    ElMessage.error(`${failCount} 个文件上传失败`)
+  } catch (error: any) {
+    markTransfersFailedByIds(transferIds, error.message)
+    ElMessage.error(`上传失败: ${error.message}`)
   }
 
   await loadRemoteDirectory()
@@ -1968,33 +2482,74 @@ const uploadSelected = async () => {
     ElMessage.warning(`已跳过 ${skippedFolders.length} 个文件夹`)
   }
 
-  // 为每个文件创建传输记录
-  const transferIds: string[] = []
-  for (const file of filesToUpload) {
-    const transferId = Date.now().toString() + Math.random()
-    transferIds.push(transferId)
+  const existingFiles = await getRemoteDirectoryFiles(remotePath.value)
+  const plannedRemoteNames: string[] = []
+  const uploadPlans: UploadTransferPlan[] = []
+  let skippedCount = skippedFolders.length
 
+  for (const file of filesToUpload) {
+    const initialRemotePath = `${remotePath.value}/${file.name}`.replace(/\/+/g, '/')
+    const conflict = await resolveUploadConflict(
+      file.name,
+      file.path,
+      file.size || 0,
+      initialRemotePath,
+      existingFiles,
+      plannedRemoteNames
+    )
+
+    if (conflict.action === 'skip') {
+      skippedCount += 1
+      continue
+    }
+
+    const transferId = Date.now().toString() + Math.random()
+    const remoteName = conflict.remotePath.split('/').pop() || file.name
+    plannedRemoteNames.push(remoteName)
+
+    uploadPlans.push({
+      name: remoteName,
+      localPath: file.path,
+      remotePath: conflict.remotePath,
+      taskId: transferId,
+      total: file.size || 0,
+      resumeFromExisting: conflict.resumeFromExisting
+    })
+  }
+
+  if (uploadPlans.length === 0) {
+    if (skippedCount > 0) ElMessage.info(`已跳过 ${skippedCount} 个项目`)
+    return
+  }
+
+  for (const plan of uploadPlans) {
     transfers.value.push({
-      id: transferId,
-      name: file.name,
+      id: plan.taskId,
+      name: plan.name,
       type: 'upload',
       status: 'active',
       progress: 0,
       speed: 0,
       eta: 0,
-      targetPath: `${remotePath.value}/${file.name}`.replace(/\/+/g, '/'),
-      localPath: file.path,
-      remotePath: `${remotePath.value}/${file.name}`.replace(/\/+/g, '/'),
+      transferred: 0,
+      total: plan.total,
+      lastProgressAt: Date.now(),
+      stalled: false,
+      targetPath: plan.remotePath,
+      localPath: plan.localPath,
+      remotePath: plan.remotePath,
       priority: 3,
       startTime: new Date()
     })
   }
 
   // 准备批量上传的文件列表（携带前端生成的 taskId）
-  const files = filesToUpload.map((file, index) => ({
-    localPath: file.path,
-    remotePath: `${remotePath.value}/${file.name}`.replace(/\/+/g, '/'),
-    taskId: transferIds[index]
+  const transferIds = uploadPlans.map((plan) => plan.taskId)
+  const files = uploadPlans.map((plan) => ({
+    localPath: plan.localPath,
+    remotePath: plan.remotePath,
+    taskId: plan.taskId,
+    resumeFromExisting: plan.resumeFromExisting
   }))
 
   try {
@@ -2002,61 +2557,22 @@ const uploadSelected = async () => {
     const result = await window.electronAPI.sftp.uploadFiles(currentSession.value.id, files)
 
     if (result.success) {
-      // 处理成功的文件
-      result.results.success.forEach((localPath: string, index: number) => {
-        const transfer = transfers.value.find((t) => t.id === transferIds[index])
-        if (transfer) {
-          transfer.status = 'completed'
-          transfer.progress = 100
-          transfer.endTime = new Date()
-          // 添加到历史记录
-          addToHistory(transfer)
-        }
-      })
-
-      // 处理失败的文件
-      result.results.failed.forEach((failure: { path: string; error: string }) => {
-        const fileIndex = files.findIndex((f) => f.localPath === failure.path)
-        if (fileIndex >= 0) {
-          const transfer = transfers.value.find((t) => t.id === transferIds[fileIndex])
-          if (transfer) {
-            transfer.status = 'failed'
-            transfer.endTime = new Date()
-            // 添加到历史记录
-            addToHistory(transfer)
-          }
-        }
-      })
-
-      // 显示结果摘要
-      if (result.results.success.length > 0) {
-        ElMessage.success(`成功上传 ${result.results.success.length} 个文件`)
-      }
-      if (result.results.failed.length > 0) {
-        ElMessage.error(`${result.results.failed.length} 个文件上传失败`)
+      applyTransferBatchResults(
+        result.results,
+        files.map((file) => ({ path: file.localPath, transferId: file.taskId })),
+        '上传'
+      )
+      if (skippedCount > skippedFolders.length) {
+        ElMessage.info(`已跳过 ${skippedCount - skippedFolders.length} 个同名文件`)
       }
     } else {
       // 全部失败
-      transferIds.forEach((id) => {
-        const transfer = transfers.value.find((t) => t.id === id)
-        if (transfer) {
-          transfer.status = 'failed'
-          transfer.endTime = new Date()
-          addToHistory(transfer)
-        }
-      })
+      markTransfersFailedByIds(transferIds, result.error)
       ElMessage.error(`批量上传失败: ${result.error}`)
     }
   } catch (error: any) {
     // 异常情况
-    transferIds.forEach((id) => {
-      const transfer = transfers.value.find((t) => t.id === id)
-      if (transfer) {
-        transfer.status = 'failed'
-        transfer.endTime = new Date()
-        addToHistory(transfer)
-      }
-    })
+    markTransfersFailedByIds(transferIds, error.message)
     ElMessage.error(`上传失败: ${error.message || '未知错误'}`)
   }
 
@@ -2082,35 +2598,73 @@ const downloadSelected = async () => {
 
   const separator = localPath.value.endsWith('\\') ? '' : '\\'
 
-  // 为每个文件创建传输记录
-  const transferIds: string[] = []
+  const existingLocalNames = localFiles.value.map((file) => file.name)
+  const plannedLocalNames: string[] = []
+  const downloadPlans: DownloadTransferPlan[] = []
+  let skippedCount = skippedFolders.length
+
   for (const file of filesToDownload) {
-    const transferId = Date.now().toString() + Math.random()
-    transferIds.push(transferId)
-
     const localFilePath = localPath.value + separator + file.name
+    const conflict = await resolveDownloadConflict(
+      file,
+      localFilePath,
+      existingLocalNames,
+      plannedLocalNames
+    )
 
+    if (conflict.action === 'skip') {
+      skippedCount += 1
+      continue
+    }
+
+    const transferId = Date.now().toString() + Math.random()
+    const localName = conflict.localPath.split(/[/\\]/).pop() || file.name
+    plannedLocalNames.push(localName)
+
+    downloadPlans.push({
+      name: localName,
+      remotePath: file.path,
+      localPath: conflict.localPath,
+      taskId: transferId,
+      total: file.size || 0,
+      resumeFromExisting: conflict.resumeFromExisting
+    })
+  }
+
+  if (downloadPlans.length === 0) {
+    if (skippedCount > 0) ElMessage.info(`已跳过 ${skippedCount} 个项目`)
+    return
+  }
+
+  // 为每个文件创建传输记录
+  for (const plan of downloadPlans) {
     transfers.value.push({
-      id: transferId,
-      name: file.name,
+      id: plan.taskId,
+      name: plan.name,
       type: 'download',
       status: 'active',
       progress: 0,
       speed: 0,
       eta: 0,
-      targetPath: localFilePath,
-      localPath: localFilePath,
-      remotePath: file.path,
+      transferred: 0,
+      total: plan.total,
+      lastProgressAt: Date.now(),
+      stalled: false,
+      targetPath: plan.localPath,
+      localPath: plan.localPath,
+      remotePath: plan.remotePath,
       priority: 3,
       startTime: new Date()
     })
   }
 
   // 准备批量下载的文件列表（携带前端生成的 taskId）
-  const files = filesToDownload.map((file, index) => ({
-    remotePath: file.path,
-    localPath: localPath.value + separator + file.name,
-    taskId: transferIds[index]
+  const transferIds = downloadPlans.map((plan) => plan.taskId)
+  const files = downloadPlans.map((plan) => ({
+    remotePath: plan.remotePath,
+    localPath: plan.localPath,
+    taskId: plan.taskId,
+    resumeFromExisting: plan.resumeFromExisting
   }))
 
   try {
@@ -2118,61 +2672,22 @@ const downloadSelected = async () => {
     const result = await window.electronAPI.sftp.downloadFiles(currentSession.value.id, files)
 
     if (result.success) {
-      // 处理成功的文件
-      result.results.success.forEach((remotePath: string, index: number) => {
-        const transfer = transfers.value.find((t) => t.id === transferIds[index])
-        if (transfer) {
-          transfer.status = 'completed'
-          transfer.progress = 100
-          transfer.endTime = new Date()
-          // 添加到历史记录
-          addToHistory(transfer)
-        }
-      })
-
-      // 处理失败的文件
-      result.results.failed.forEach((failure: { path: string; error: string }) => {
-        const fileIndex = files.findIndex((f) => f.remotePath === failure.path)
-        if (fileIndex >= 0) {
-          const transfer = transfers.value.find((t) => t.id === transferIds[fileIndex])
-          if (transfer) {
-            transfer.status = 'failed'
-            transfer.endTime = new Date()
-            // 添加到历史记录
-            addToHistory(transfer)
-          }
-        }
-      })
-
-      // 显示结果摘要
-      if (result.results.success.length > 0) {
-        ElMessage.success(`成功下载 ${result.results.success.length} 个文件`)
-      }
-      if (result.results.failed.length > 0) {
-        ElMessage.error(`${result.results.failed.length} 个文件下载失败`)
+      applyTransferBatchResults(
+        result.results,
+        files.map((file) => ({ path: file.remotePath, transferId: file.taskId })),
+        '下载'
+      )
+      if (skippedCount > skippedFolders.length) {
+        ElMessage.info(`已跳过 ${skippedCount - skippedFolders.length} 个同名文件`)
       }
     } else {
       // 全部失败
-      transferIds.forEach((id) => {
-        const transfer = transfers.value.find((t) => t.id === id)
-        if (transfer) {
-          transfer.status = 'failed'
-          transfer.endTime = new Date()
-          addToHistory(transfer)
-        }
-      })
+      markTransfersFailedByIds(transferIds, result.error)
       ElMessage.error(`批量下载失败: ${result.error}`)
     }
   } catch (error: any) {
     // 异常情况
-    transferIds.forEach((id) => {
-      const transfer = transfers.value.find((t) => t.id === id)
-      if (transfer) {
-        transfer.status = 'failed'
-        transfer.endTime = new Date()
-        addToHistory(transfer)
-      }
-    })
+    markTransfersFailedByIds(transferIds, error.message)
     ElMessage.error(`下载失败: ${error.message || '未知错误'}`)
   }
 
@@ -2223,7 +2738,7 @@ const pauseTransfer = async (transferId: string) => {
     if (result.success) {
       const transfer = transfers.value.find((t) => t.id === transferId)
       if (transfer) {
-        transfer.status = 'paused'
+        markTransferPaused(transfer)
         ElMessage.success('传输已暂停')
       }
     } else {
@@ -2237,19 +2752,29 @@ const pauseTransfer = async (transferId: string) => {
 // 恢复传输
 const resumeTransfer = async (transferId: string) => {
   if (!currentSession.value) return
+  const transfer = transfers.value.find((t) => t.id === transferId)
 
   try {
     const result = await window.electronAPI.sftp.resumeTransfer(currentSession.value.id, transferId)
     if (result.success) {
-      const transfer = transfers.value.find((t) => t.id === transferId)
       if (transfer) {
         transfer.status = 'active'
+        transfer.lastProgressAt = Date.now()
+        transfer.stalled = false
+        transfer.speed = 0
+        transfer.eta = 0
         ElMessage.success('传输已恢复')
       }
     } else {
+      if (transfer) {
+        markTransferPaused(transfer)
+      }
       ElMessage.error(`恢复失败: ${result.error}`)
     }
   } catch (error: any) {
+    if (transfer) {
+      markTransferPaused(transfer)
+    }
     ElMessage.error(`恢复失败: ${error.message}`)
   }
 }
@@ -2283,6 +2808,11 @@ const retryTransfer = async (transferId: string) => {
 
   transfer.status = 'active'
   transfer.progress = 0
+  transfer.transferred = 0
+  transfer.speed = 0
+  transfer.eta = 0
+  transfer.lastProgressAt = Date.now()
+  transfer.stalled = false
   transfer.startTime = new Date() // 重新开始计时
 
   try {
@@ -2304,6 +2834,7 @@ const retryTransfer = async (transferId: string) => {
     if (result?.success) {
       transfer.status = 'completed'
       transfer.progress = 100
+      transfer.transferred = transfer.total || transfer.transferred
       transfer.endTime = new Date()
       addToHistory(transfer)
       ElMessage.success('传输成功')
@@ -2348,9 +2879,15 @@ const resumeIncompleteTransfer = async (record: TransferRecord) => {
     name: getFileName(record.remotePath),
     type: record.type,
     status: 'active',
-    progress: (record.transferred / record.totalSize) * 100,
+    progress: normalizeProgressPercentage(
+      calculateProgressPercentage(record.transferred, record.totalSize)
+    ),
     speed: 0,
     eta: 0,
+    transferred: normalizeByteCount(record.transferred),
+    total: normalizeByteCount(record.totalSize),
+    lastProgressAt: Date.now(),
+    stalled: false,
     targetPath: record.type === 'upload' ? record.remotePath : record.localPath,
     localPath: record.localPath,
     remotePath: record.remotePath
@@ -2365,21 +2902,20 @@ const resumeIncompleteTransfer = async (record: TransferRecord) => {
     const transfer = transfers.value.find((t) => t.id === transferId)
     if (transfer) {
       if (result.success) {
-        transfer.status = 'completed'
-        transfer.progress = 100
-        ElMessage.success('传输已完成')
-
-        // 从未完成列表中移除
+        transfer.status = 'active'
+        transfer.lastProgressAt = Date.now()
+        transfer.stalled = false
+        ElMessage.success('传输已恢复')
         await loadIncompleteTransfers()
       } else {
-        transfer.status = 'failed'
+        markTransferFailed(transfer, result.error)
         ElMessage.error(`传输失败: ${result.error}`)
       }
     }
   } catch (error: any) {
     const transfer = transfers.value.find((t) => t.id === transferId)
     if (transfer) {
-      transfer.status = 'failed'
+      markTransferFailed(transfer, error.message)
     }
     ElMessage.error(`传输失败: ${error.message}`)
   }
@@ -2464,7 +3000,7 @@ const addToHistory = (transfer: Transfer) => {
     transfer.status === 'cancelled'
   ) {
     // 尝试获取文件大小
-    let fileSize = 0
+    let fileSize = transfer.total || transfer.transferred || 0
     if (transfer.type === 'upload' && transfer.localPath) {
       // 对于上传，从本地文件获取大小
       const localFile = localFiles.value.find((f) => f.path === transfer.localPath)
@@ -2635,9 +3171,62 @@ const getStatusText = (status: string) => {
   return map[status] || status
 }
 
+const getTransferStatusText = (transfer: Transfer) => {
+  if (transfer.status === 'active' && transfer.stalled) {
+    return '等待服务器响应'
+  }
+  return getStatusText(transfer.status)
+}
+
 const formatSpeed = (speed: number) => {
-  if (!speed) return ''
-  return `${formatSize({ size: speed })}/s`
+  return `${formatSize({ size: normalizeByteCount(speed) })}/s`
+}
+
+const normalizeByteCount = (value: unknown, fallback = 0) => {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric) || numeric < 0) return fallback
+  return numeric
+}
+
+const normalizeDurationSeconds = (value: unknown) => {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric) || numeric < 0) return 0
+  return numeric
+}
+
+const calculateProgressPercentage = (transferred: number, total: number) => {
+  if (!total) return 0
+  return (transferred / total) * 100
+}
+
+const normalizeProgressPercentage = (value: unknown) => {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 0
+  const clamped = Math.min(100, Math.max(0, numeric))
+  return Number(clamped.toFixed(2))
+}
+
+const formatProgressText = (percentage: number) => {
+  const normalized = normalizeProgressPercentage(percentage)
+  return `${normalized.toFixed(2)}%`
+}
+
+const formatTransferAmount = (transfer: Transfer) => {
+  const transferred = formatSize({ size: transfer.transferred })
+  if (!transfer.total) return transferred
+  return `${transferred} / ${formatSize({ size: transfer.total })}`
+}
+
+const formatEta = (seconds: number) => {
+  const safeSeconds = Math.ceil(normalizeDurationSeconds(seconds))
+  if (safeSeconds <= 0) return '-'
+  if (safeSeconds < 60) return `${safeSeconds}秒`
+  const minutes = Math.floor(safeSeconds / 60)
+  const remainingSeconds = safeSeconds % 60
+  if (minutes < 60) return `${minutes}分${remainingSeconds ? `${remainingSeconds}秒` : ''}`
+  const hours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  return `${hours}小时${remainingMinutes ? `${remainingMinutes}分` : ''}`
 }
 
 // ==================== 压缩/解压功能 ====================
@@ -2870,6 +3459,7 @@ const extractRemoteFileTo = async (file: FileInfo) => {
 .sftp-panel {
   height: 100%;
   width: 100%;
+  position: relative;
   display: flex;
   flex-direction: column;
   background-color: var(--bg-main);
@@ -3143,14 +3733,41 @@ const extractRemoteFileTo = async (file: FileInfo) => {
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
 }
 
-/* Transfer Queue (Bottom Panel) */
+/* Transfer Queue Entry */
+.transfer-queue-entry {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  z-index: 40;
+}
+
+.queue-entry-button {
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+}
+
+.queue-entry-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--error-color);
+  color: #fff;
+  font-size: var(--text-xs);
+  line-height: 18px;
+  font-weight: 700;
+}
+
+:deep(.transfer-queue-dialog .el-dialog__body) {
+  padding: 0;
+}
+
+/* Transfer Queue */
 .transfer-queue {
-  height: 200px;
+  height: min(620px, 70vh);
   background: var(--bg-secondary);
-  border-top: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
 }
 
 .queue-header {
@@ -3258,10 +3875,27 @@ const extractRemoteFileTo = async (file: FileInfo) => {
 }
 
 .transfer-status {
-  min-width: 100px;
+  min-width: 120px;
   text-align: right;
   font-variant-numeric: tabular-nums;
   font-weight: 500;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.transfer-speed,
+.transfer-progress-meta {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+.transfer-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .transfer-actions {

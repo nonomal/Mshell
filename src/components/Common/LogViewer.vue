@@ -124,7 +124,7 @@
 import { ref, onMounted } from 'vue'
 import { Refresh, Delete } from '@element-plus/icons-vue'
 import VirtualTable from './VirtualTable.vue'
-import type { Column } from './VirtualTable.vue'
+import type { Column } from './virtual-table.types'
 
 interface LogEntry {
   timestamp: string
@@ -167,7 +167,7 @@ const loadLogs = async () => {
       level: filter.value.level || undefined
     } : undefined
     
-    const result = await window.electronAPI.log.getLogs(filterParam)
+    const result = await window.electronAPI.logs.get(filterParam)
     logs.value = result
   } catch (error) {
     console.error('Failed to load logs:', error)

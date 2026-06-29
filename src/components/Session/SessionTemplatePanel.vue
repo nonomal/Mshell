@@ -545,7 +545,9 @@ const confirmCreateSession = async () => {
     // 创建会话
     const result = await window.electronAPI.session?.create?.(sessionConfig)
     
-    if (result) {
+    if (result.success && result.data) {
+      const createdSession = result.data
+
       ElMessage.success('会话已创建')
       showUseDialog.value = false
       
@@ -560,11 +562,13 @@ const confirmCreateSession = async () => {
         setTimeout(() => {
           appStore.addTab({
             id: `tab-${Date.now()}`,
-            name: sessionConfig.name,
-            sessionId: result.id
+            name: createdSession.name,
+            session: createdSession
           })
         }, 100)
       }
+    } else {
+      ElMessage.error(result.error || '创建会话失败')
     }
   } catch (error: any) {
     ElMessage.error(error.message || '创建会话失败')

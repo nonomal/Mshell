@@ -66,14 +66,12 @@
 <script setup lang="ts" generic="T extends Record<string, any>">
 import { ref, computed, watch } from 'vue'
 import VirtualScroll from './VirtualScroll.vue'
+import type { Column } from './virtual-table.types'
 
-export interface Column {
-  key: string
-  label: string
-  width?: string
-  minWidth?: string
-  sortable?: boolean
-  slot?: string
+type VirtualScrollExpose = {
+  scrollToIndex: (index: number, behavior?: ScrollBehavior) => void
+  scrollToTop: (behavior?: ScrollBehavior) => void
+  scrollToBottom: (behavior?: ScrollBehavior) => void
 }
 
 interface Props {
@@ -99,7 +97,7 @@ const emit = defineEmits<{
   selectionChange: [selected: T[]]
 }>()
 
-const virtualScrollRef = ref<InstanceType<typeof VirtualScroll>>()
+const virtualScrollRef = ref<VirtualScrollExpose>()
 const sortKey = ref<string>('')
 const sortOrder = ref<'asc' | 'desc'>('asc')
 const selectedRows = ref<Set<any>>(new Set())

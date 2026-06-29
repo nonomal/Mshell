@@ -53,10 +53,11 @@
 
           <div v-if="task.status === 'active'" class="transfer-progress">
             <div class="progress-bar">
-              <div class="progress-fill" :style="{ width: `${task.progress.percentage}%` }"></div>
+              <div class="progress-fill" :style="{ width: `${formatPercentageValue(task.progress.percentage)}%` }"></div>
             </div>
             <div class="progress-info">
               <span>{{ formatSize(task.progress.transferred) }} / {{ formatSize(task.progress.total) }}</span>
+              <span>{{ formatPercentageText(task.progress.percentage) }}</span>
               <span>{{ formatSpeed(task.progress.speed) }}</span>
               <span>剩余 {{ formatTime(task.progress.eta) }}</span>
             </div>
@@ -182,6 +183,8 @@ interface TransferTask {
   createdAt?: string
 }
 
+type QueueTab = 'all' | 'active' | 'completed' | 'failed' | 'history'
+
 interface Props {
   connectionId: string
 }
@@ -189,11 +192,11 @@ interface Props {
 const props = defineProps<Props>()
 
 const tasks = ref<TransferTask[]>([])
-const activeTab = ref<'all' | 'active' | 'completed' | 'failed' | 'history'>('all')
+const activeTab = ref<QueueTab>('all')
 const history = ref<TransferTask[]>([])
 
 // 标签页配置
-const tabs = computed(() => [
+const tabs = computed<Array<{ label: string; value: QueueTab; count: number }>>(() => [
   { label: '全部', value: 'all', count: tasks.value.length },
   { label: '进行中', value: 'active', count: activeTasks.value.length },
   { label: '已完成', value: 'completed', count: completedTasks.value.length },
@@ -270,6 +273,16 @@ const formatSize = (bytes: number): string => {
 // 格式化速度
 const formatSpeed = (bytesPerSecond: number): string => {
   return `${formatSize(bytesPerSecond)}/s`
+}
+
+const formatPercentageValue = (percentage: number): number => {
+  const numeric = Number(percentage)
+  if (!Number.isFinite(numeric)) return 0
+  return Number(Math.min(100, Math.max(0, numeric)).toFixed(2))
+}
+
+const formatPercentageText = (percentage: number): string => {
+  return `${formatPercentageValue(percentage).toFixed(2)}%`
 }
 
 // 格式化时间

@@ -246,7 +246,7 @@ describe('SSHConnectionManager', () => {
 
             const connection = manager.getConnection(params.id)
             expect(connection).toBeDefined()
-            expect(connection?.keepaliveTimer).toBeDefined()
+            expect(connection?.options.keepaliveInterval).toBe(params.keepaliveInterval)
 
             // Cleanup
             await manager.disconnect(params.id)

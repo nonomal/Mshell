@@ -344,10 +344,6 @@ import * as FlagIcons from 'country-flag-icons/string/3x2'
 import VirtualList from '../Common/VirtualList.vue'
 import DraggableSessionItem from './DraggableSessionItem.vue'
 import DroppableGroup from './DroppableGroup.vue'
-import { useLocale } from '@/composables/useLocale'
-
-// 国际化
-const { t } = useLocale()
 
 // 使用 store - 不需要 props!
 const appStore = useAppStore()

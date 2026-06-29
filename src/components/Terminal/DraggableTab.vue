@@ -54,10 +54,11 @@ const handleDragStart = (event: DragEvent) => {
 
   event.dataTransfer.effectAllowed = 'move'
 
+  const tabElement = event.currentTarget as HTMLElement | null
   const dragImage = document.createElement('div')
   dragImage.className = 'tab-drag-image'
   dragImage.textContent =
-    props.tabData?.name || props.tabData?.session?.name || event.currentTarget?.textContent || ''
+    props.tabData?.name || props.tabData?.session?.name || tabElement?.textContent || ''
   document.body.appendChild(dragImage)
   event.dataTransfer.setDragImage(dragImage, 12, 12)
   requestAnimationFrame(() => {

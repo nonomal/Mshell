@@ -20,6 +20,8 @@ export interface TransferRecord {
   checksum?: string // 文件校验和
 }
 
+const RESUMABLE_STATUSES: TransferRecord['status'][] = ['pending', 'active', 'paused', 'failed']
+
 /**
  * TransferRecordManager - 管理传输记录，支持断点续传
  */
@@ -41,10 +43,21 @@ export class TransferRecordManager {
       if (existsSync(this.recordsPath)) {
         const content = await fs.readFile(this.recordsPath, 'utf-8')
         const data = JSON.parse(content)
-        
+        let changed = false
+
         if (Array.isArray(data)) {
-          for (const record of data) {
-            this.records.set(record.id, record)
+          for (const record of data as TransferRecord[]) {
+            const normalizedRecord = { ...record }
+            if (normalizedRecord.status === 'active') {
+              normalizedRecord.status = 'paused'
+              normalizedRecord.updatedAt = new Date().toISOString()
+              changed = true
+            }
+            this.records.set(normalizedRecord.id, normalizedRecord)
+          }
+
+          if (changed) {
+            await this.save()
           }
         }
       }
@@ -120,7 +133,7 @@ export class TransferRecordManager {
    */
   getIncompleteTransfers(): TransferRecord[] {
     return Array.from(this.records.values()).filter(
-      record => record.status === 'pending' || record.status === 'paused' || record.status === 'active'
+      record => RESUMABLE_STATUSES.includes(record.status)
     )
   }
 

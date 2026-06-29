@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { promises as fs } from 'fs'
-import { join, dirname, basename } from 'path'
+import { join, basename } from 'path'
 import { createWriteStream, createReadStream } from 'fs'
 import archiver from 'archiver'
 import unzipper from 'unzipper'
@@ -109,7 +109,6 @@ export function registerFsHandlers() {
   // 压缩单个文件或目录
   ipcMain.handle('fs:compress', async (_event, sourcePath: string, archivePath: string) => {
     try {
-      const stats = await fs.stat(sourcePath)
       const ext = archivePath.toLowerCase()
       
       if (ext.endsWith('.zip')) {

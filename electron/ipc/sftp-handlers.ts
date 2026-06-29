@@ -1,21 +1,36 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { sftpManager } from '../managers/SFTPManager'
-import { sshConnectionManager } from '../managers/SSHConnectionManager'
+import { HostKeyChallengeError, sshConnectionManager } from '../managers/SSHConnectionManager'
 import { auditLogManager, AuditAction } from '../managers/AuditLogManager'
 import { v4 as uuidv4 } from 'uuid'
 import { AppError } from '../utils/error-handler'
+import { prepareSSHConnectionOptions } from '../utils/ssh-connect-options'
 
 /**
  * 标准化错误响应
  */
 function handleError(error: any) {
+  if (error instanceof HostKeyChallengeError) {
+    return {
+      success: false,
+      error: error.message,
+      userMessage:
+        error.details.status === 'changed'
+          ? '服务器主机指纹已变化，请确认是否信任新指纹'
+          : '需要确认服务器主机指纹',
+      code: error.code,
+      details: error.details
+    }
+  }
+
   if (error instanceof AppError) {
     return {
       success: false,
       error: error.message,
       userMessage: error.userMessage,
       type: error.type,
-      code: error.code
+      code: error.code,
+      details: error.details
     }
   }
   return {
@@ -29,6 +44,27 @@ function handleError(error: any) {
  * 注册 SFTP IPC 处理器
  */
 export function registerSFTPHandlers() {
+  // 建立独立的 SFTP 连接。
+  // 文件传输不依赖终端窗口，但连接参数处理必须和终端 SSH 保持一致。
+  ipcMain.handle('sftp:connect', async (_event, connectionId: string, options: any) => {
+    try {
+      const connectOptions = await prepareSSHConnectionOptions({ ...options, openShell: false })
+      await sshConnectionManager.connect(connectionId, connectOptions)
+      const connection = sshConnectionManager.getConnection(connectionId)
+      if (!connection) {
+        return { success: false, error: 'Connection not found', userMessage: '连接不存在' }
+      }
+      await sftpManager.initSFTP(connectionId, connection.client)
+      return { success: true }
+    } catch (error: any) {
+      try {
+        sftpManager.closeSFTP(connectionId)
+        await sshConnectionManager.disconnect(connectionId)
+      } catch {}
+      return handleError(error)
+    }
+  })
+
   // 初始化 SFTP
   ipcMain.handle('sftp:init', async (_event, connectionId: string) => {
     try {
@@ -57,10 +93,24 @@ export function registerSFTPHandlers() {
   // 上传文件
   ipcMain.handle(
     'sftp:uploadFile',
-    async (_event, connectionId: string, localPath: string, remotePath: string) => {
+    async (
+      _event,
+      connectionId: string,
+      localPath: string,
+      remotePath: string,
+      options?: { resumeFromExisting?: boolean }
+    ) => {
       try {
         const taskId = uuidv4()
-        await sftpManager.uploadFile(connectionId, localPath, remotePath, taskId)
+        await sftpManager.uploadFile(
+          connectionId,
+          localPath,
+          remotePath,
+          taskId,
+          undefined,
+          true,
+          options?.resumeFromExisting === true
+        )
         
         // 记录审计日志
         auditLogManager.log(AuditAction.FILE_UPLOAD, {
@@ -87,10 +137,24 @@ export function registerSFTPHandlers() {
   // 下载文件
   ipcMain.handle(
     'sftp:downloadFile',
-    async (_event, connectionId: string, remotePath: string, localPath: string) => {
+    async (
+      _event,
+      connectionId: string,
+      remotePath: string,
+      localPath: string,
+      options?: { resumeFromExisting?: boolean }
+    ) => {
       try {
         const taskId = uuidv4()
-        await sftpManager.downloadFile(connectionId, remotePath, localPath, taskId)
+        await sftpManager.downloadFile(
+          connectionId,
+          remotePath,
+          localPath,
+          taskId,
+          undefined,
+          true,
+          options?.resumeFromExisting === true
+        )
         
         // 记录审计日志
         auditLogManager.log(AuditAction.FILE_DOWNLOAD, {
@@ -219,11 +283,10 @@ export function registerSFTPHandlers() {
   // 恢复传输
   ipcMain.handle('sftp:resumeTransfer', async (_event, connectionId: string, taskId: string) => {
     try {
-      await sftpManager.resumeTask(connectionId, taskId, (progress) => {
-        // 发送进度更新
+      sftpManager.resumeTask(connectionId, taskId).catch((error: any) => {
         const windows = BrowserWindow.getAllWindows()
-        windows.forEach(win => {
-          win.webContents.send('sftp:progress', taskId, progress)
+        windows.forEach((win) => {
+          win.webContents.send('sftp:error', taskId, error.message || '恢复传输失败')
         })
       })
       return { success: true }
@@ -285,7 +348,16 @@ export function registerSFTPHandlers() {
   // 批量上传文件
   ipcMain.handle(
     'sftp:uploadFiles',
-    async (_event, connectionId: string, files: Array<{ localPath: string; remotePath: string; taskId?: string }>) => {
+    async (
+      _event,
+      connectionId: string,
+      files: Array<{
+        localPath: string
+        remotePath: string
+        taskId?: string
+        resumeFromExisting?: boolean
+      }>
+    ) => {
       try {
         const results = await sftpManager.uploadFiles(connectionId, files)
         return { success: true, results }
@@ -298,7 +370,16 @@ export function registerSFTPHandlers() {
   // 批量下载文件
   ipcMain.handle(
     'sftp:downloadFiles',
-    async (_event, connectionId: string, files: Array<{ remotePath: string; localPath: string; taskId?: string }>) => {
+    async (
+      _event,
+      connectionId: string,
+      files: Array<{
+        remotePath: string
+        localPath: string
+        taskId?: string
+        resumeFromExisting?: boolean
+      }>
+    ) => {
       try {
         const results = await sftpManager.downloadFiles(connectionId, files)
         return { success: true, results }
@@ -411,7 +492,7 @@ export function registerSFTPHandlers() {
       const localPath = path.join(tempDir, fileName)
       
       // 下载文件到临时目录
-      await sftpManager.downloadFile(connectionId, remotePath, localPath)
+      await sftpManager.downloadFile(connectionId, remotePath, localPath, `drag-${Date.now()}`)
       
       // 创建一个简单的拖曳图标（使用空图标，让系统使用默认图标）
       const icon = nativeImage.createEmpty()

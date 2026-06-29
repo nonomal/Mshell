@@ -1,7 +1,6 @@
 import { ipcMain } from 'electron'
 import { portForwardManager } from '../managers/PortForwardManager'
 import { sshConnectionManager } from '../managers/SSHConnectionManager'
-import { v4 as uuidv4 } from 'uuid'
 
 interface PortForwardConfig {
   type: 'local' | 'remote' | 'dynamic'
@@ -36,9 +35,6 @@ export function registerPortForwardHandlers() {
         if (!connection) {
           return { success: false, error: 'Connection not found' }
         }
-
-        const id = uuidv4()
-
         // 不自动启动，只添加配置
         const forward = {
           connectionId,

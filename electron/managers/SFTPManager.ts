@@ -34,6 +34,40 @@ export interface TransferTask {
   error?: string
 }
 
+interface RealtimeSpeedSample {
+  transferred: number
+  time: number
+  speed: number
+}
+
+type UploadFileRequest = {
+  localPath: string
+  remotePath: string
+  taskId?: string
+  resumeFromExisting?: boolean
+}
+
+type DownloadFileRequest = {
+  remotePath: string
+  localPath: string
+  taskId?: string
+  resumeFromExisting?: boolean
+}
+
+class TransferPausedError extends Error {
+  constructor(public readonly taskId: string) {
+    super(`Transfer paused: ${taskId}`)
+    this.name = 'TransferPausedError'
+  }
+}
+
+const RESUMABLE_TRANSFER_STATUSES = new Set<TransferRecord['status']>([
+  'pending',
+  'active',
+  'paused',
+  'failed'
+])
+
 /**
  * SFTPManager - 管理 SFTP 文件操作
  */
@@ -56,6 +90,50 @@ export class SFTPManager extends EventEmitter {
 
     // 初始化传输记录管理器
     transferRecordManager.initialize().catch(console.error)
+  }
+
+  private createProgress(
+    transferred: number,
+    total: number,
+    speed: number,
+    eta: number
+  ): TransferProgress {
+    const safeTotal = Number.isFinite(total) && total > 0 ? total : 0
+    const safeTransferred = Math.max(0, Math.min(transferred || 0, safeTotal || transferred || 0))
+    const rawPercentage = safeTotal > 0 ? (safeTransferred / safeTotal) * 100 : 0
+    const clampedPercentage = Math.min(100, Math.max(0, rawPercentage))
+    return {
+      transferred: safeTransferred,
+      total: safeTotal,
+      percentage: Number(clampedPercentage.toFixed(2)),
+      speed: Number.isFinite(speed) && speed > 0 ? speed : 0,
+      eta: Number.isFinite(eta) && eta > 0 ? eta : 0
+    }
+  }
+
+  private updateRealtimeSpeedSample(
+    sample: RealtimeSpeedSample,
+    transferred: number,
+    now: number,
+    force = false
+  ): number {
+    if (transferred < sample.transferred) {
+      sample.transferred = transferred
+      sample.time = now
+      sample.speed = 0
+      return sample.speed
+    }
+
+    const elapsed = (now - sample.time) / 1000
+    const bytesDiff = transferred - sample.transferred
+
+    if (elapsed > 0 && bytesDiff > 0 && (force || elapsed >= 0.25)) {
+      sample.speed = bytesDiff / elapsed
+      sample.transferred = transferred
+      sample.time = now
+    }
+
+    return sample.speed
   }
 
   /**
@@ -129,7 +207,8 @@ export class SFTPManager extends EventEmitter {
     remotePath: string,
     taskId: string,
     onProgress?: (progress: TransferProgress) => void,
-    resumable: boolean = true
+    resumable: boolean = true,
+    resumeFromExisting: boolean = false
   ): Promise<void> {
     const sftp = this.sftpClients.get(connectionId)
     if (!sftp) {
@@ -143,7 +222,10 @@ export class SFTPManager extends EventEmitter {
     let startPosition = 0
     let record = transferRecordManager.getRecord(taskId)
 
-    if (resumable && record && record.status === 'paused') {
+    if (
+      resumable &&
+      (resumeFromExisting || (record && RESUMABLE_TRANSFER_STATUSES.has(record.status)))
+    ) {
       try {
         const remoteStats: any = await new Promise((resolve, reject) => {
           sftp.stat(remotePath, (err: Error, stats: any) => {
@@ -179,24 +261,25 @@ export class SFTPManager extends EventEmitter {
       })
     }
 
+    if (resumable && record && startPosition >= totalSize && totalSize > 0) {
+      await transferRecordManager
+        .updateRecord(taskId, { status: 'completed', transferred: totalSize })
+        .catch(console.error)
+      this.emit('complete', taskId)
+      return
+    }
+
     const task: TransferTask = {
       id: taskId,
       type: 'upload',
       localPath,
       remotePath,
       status: 'active',
-      progress: {
-        transferred: startPosition,
-        total: totalSize,
-        percentage: (startPosition / totalSize) * 100,
-        speed: 0,
-        eta: 0
-      }
+      progress: this.createProgress(startPosition, totalSize, 0, 0)
     }
     this.transferTasks.set(taskId, task)
 
-    // 断点续传使用流式传输，新传输使用 fastPut（并发，速度快很多）
-    if (startPosition > 0) {
+    if (resumable) {
       return this._uploadWithStream(
         sftp,
         localPath,
@@ -209,31 +292,46 @@ export class SFTPManager extends EventEmitter {
       )
     }
 
+    return this._uploadWithFastPut(
+      sftp,
+      localPath,
+      remotePath,
+      taskId,
+      task,
+      totalSize,
+      onProgress
+    )
+  }
+
+  /**
+   * 并发上传。用于新上传，吞吐优先，进度由服务端写入确认驱动。
+   */
+  private _uploadWithFastPut(
+    sftp: any,
+    localPath: string,
+    remotePath: string,
+    taskId: string,
+    task: TransferTask,
+    totalSize: number,
+    onProgress?: (progress: TransferProgress) => void
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
-      let lastTransferred = 0
-      let lastTime = Date.now()
+      const PROGRESS_EVENT_INTERVAL_MS = 250
+      const FAST_PUT_CONCURRENCY = 64
+      const FAST_PUT_CHUNK_SIZE = 254 * 1024
+      const speedSample: RealtimeSpeedSample = {
+        transferred: 0,
+        time: Date.now(),
+        speed: 0
+      }
+      let lastProgressEmit = 0
       let lastRecordUpdate = Date.now()
 
-      const stepCb = (totalTransferred: number, _chunk: number, total: number) => {
+      const updateProgress = (totalTransferred: number, total: number, force = false) => {
         const now = Date.now()
-        const timeDiff = (now - lastTime) / 1000
-        const bytesDiff = totalTransferred - lastTransferred
-        const speed = timeDiff > 0 ? bytesDiff / timeDiff : 0
-        const remaining = total - totalTransferred
-        const eta = speed > 0 ? remaining / speed : 0
+        const safeTotal = Number.isFinite(total) && total > 0 ? total : totalSize
 
-        task.progress = {
-          transferred: totalTransferred,
-          total,
-          percentage: (totalTransferred / total) * 100,
-          speed,
-          eta
-        }
-
-        if (onProgress) onProgress(task.progress)
-        this.emit('progress', taskId, task.progress)
-
-        if (now - lastRecordUpdate >= 5000) {
+        if (now - lastRecordUpdate >= 5000 || force) {
           transferRecordManager
             .updateRecord(taskId, {
               transferred: totalTransferred,
@@ -243,17 +341,34 @@ export class SFTPManager extends EventEmitter {
           lastRecordUpdate = now
         }
 
-        lastTransferred = totalTransferred
-        lastTime = now
+        if (!force && now - lastProgressEmit < PROGRESS_EVENT_INTERVAL_MS) {
+          return
+        }
+
+        const speed = this.updateRealtimeSpeedSample(
+          speedSample,
+          totalTransferred,
+          now,
+          force || totalTransferred >= safeTotal
+        )
+        const remaining = safeTotal - totalTransferred
+        const eta = speed > 0 ? remaining / speed : 0
+
+        task.progress = this.createProgress(totalTransferred, safeTotal, speed, eta)
+        if (onProgress) onProgress(task.progress)
+        this.emit('progress', taskId, task.progress)
+        lastProgressEmit = now
       }
 
       sftp.fastPut(
         localPath,
         remotePath,
         {
-          concurrency: 64,
-          chunkSize: 256 * 1024,
-          step: stepCb
+          concurrency: FAST_PUT_CONCURRENCY,
+          chunkSize: FAST_PUT_CHUNK_SIZE,
+          step: (totalTransferred: number, _chunk: number, total: number) => {
+            updateProgress(totalTransferred, total || totalSize)
+          }
         },
         async (err: Error | null) => {
           if (err) {
@@ -266,6 +381,8 @@ export class SFTPManager extends EventEmitter {
             reject(err)
             return
           }
+
+          updateProgress(totalSize, totalSize, true)
           task.status = 'completed'
           task.progress.percentage = 100
           task.progress.transferred = totalSize
@@ -299,33 +416,38 @@ export class SFTPManager extends EventEmitter {
         highWaterMark: CHUNK_SIZE
       })
       const writeStream = sftp.createWriteStream(remotePath, {
-        flags: 'a',
+        flags: startPosition > 0 ? 'a' : 'w',
         highWaterMark: CHUNK_SIZE
       })
 
       // 注册流引用，供 pauseTask 使用
-      this.pauseControllers.set(taskId, { paused: false, readStream, writeStream })
+      const pauseController = { paused: false, readStream, writeStream }
+      this.pauseControllers.set(taskId, pauseController)
 
       let transferred = startPosition
-      let lastTransferred = startPosition
-      let lastTime = Date.now()
       let lastRecordUpdate = Date.now()
+      const speedSample: RealtimeSpeedSample = {
+        transferred: startPosition,
+        time: Date.now(),
+        speed: 0
+      }
 
       const progressInterval = setInterval(() => {
+        if (task.status !== 'active') {
+          return
+        }
+
         const now = Date.now()
-        const timeDiff = (now - lastTime) / 1000
-        const bytesDiff = transferred - lastTransferred
-        const speed = timeDiff > 0 ? bytesDiff / timeDiff : 0
+        const speed = this.updateRealtimeSpeedSample(
+          speedSample,
+          transferred,
+          now,
+          transferred >= totalSize
+        )
         const remaining = totalSize - transferred
         const eta = speed > 0 ? remaining / speed : 0
 
-        task.progress = {
-          transferred,
-          total: totalSize,
-          percentage: (transferred / totalSize) * 100,
-          speed,
-          eta
-        }
+        task.progress = this.createProgress(transferred, totalSize, speed, eta)
         if (onProgress) onProgress(task.progress)
         this.emit('progress', taskId, task.progress)
 
@@ -335,8 +457,6 @@ export class SFTPManager extends EventEmitter {
             .catch(console.error)
           lastRecordUpdate = now
         }
-        lastTransferred = transferred
-        lastTime = now
       }, 500)
 
       readStream.on('data', (chunk: Buffer | string) => {
@@ -345,10 +465,12 @@ export class SFTPManager extends EventEmitter {
 
       writeStream.on('close', async () => {
         clearInterval(progressInterval)
-        this.pauseControllers.delete(taskId)
+        if (this.pauseControllers.get(taskId) === pauseController) {
+          this.pauseControllers.delete(taskId)
+        }
         // 如果是暂停导致的关闭，不标记为完成
         if (task.status === 'paused') {
-          resolve()
+          reject(new TransferPausedError(taskId))
           return
         }
         task.status = 'completed'
@@ -362,9 +484,11 @@ export class SFTPManager extends EventEmitter {
 
       writeStream.on('error', async (err: Error) => {
         clearInterval(progressInterval)
-        this.pauseControllers.delete(taskId)
+        if (this.pauseControllers.get(taskId) === pauseController) {
+          this.pauseControllers.delete(taskId)
+        }
         if (task.status === 'paused') {
-          resolve()
+          reject(new TransferPausedError(taskId))
           return
         }
         task.status = 'failed'
@@ -378,9 +502,11 @@ export class SFTPManager extends EventEmitter {
 
       readStream.on('error', async (err: Error) => {
         clearInterval(progressInterval)
-        this.pauseControllers.delete(taskId)
+        if (this.pauseControllers.get(taskId) === pauseController) {
+          this.pauseControllers.delete(taskId)
+        }
         if (task.status === 'paused') {
-          resolve()
+          reject(new TransferPausedError(taskId))
           return
         }
         task.status = 'failed'
@@ -404,7 +530,8 @@ export class SFTPManager extends EventEmitter {
     localPath: string,
     taskId: string,
     onProgress?: (progress: TransferProgress) => void,
-    resumable: boolean = true
+    resumable: boolean = true,
+    resumeFromExisting: boolean = false
   ): Promise<void> {
     const sftp = this.sftpClients.get(connectionId)
     if (!sftp) {
@@ -422,7 +549,10 @@ export class SFTPManager extends EventEmitter {
     let startPosition = 0
     let record = transferRecordManager.getRecord(taskId)
 
-    if (resumable && record && record.status === 'paused') {
+    if (
+      resumable &&
+      (resumeFromExisting || (record && RESUMABLE_TRANSFER_STATUSES.has(record.status)))
+    ) {
       if (fs.existsSync(localPath)) {
         const localStats = fs.statSync(localPath)
         startPosition = localStats.size
@@ -450,24 +580,26 @@ export class SFTPManager extends EventEmitter {
       })
     }
 
+    if (resumable && record && startPosition >= totalSize && totalSize > 0) {
+      await transferRecordManager
+        .updateRecord(taskId, { status: 'completed', transferred: totalSize })
+        .catch(console.error)
+      this.emit('complete', taskId)
+      return
+    }
+
     const task: TransferTask = {
       id: taskId,
       type: 'download',
       localPath,
       remotePath,
       status: 'active',
-      progress: {
-        transferred: startPosition,
-        total: totalSize,
-        percentage: (startPosition / totalSize) * 100,
-        speed: 0,
-        eta: 0
-      }
+      progress: this.createProgress(startPosition, totalSize, 0, 0)
     }
     this.transferTasks.set(taskId, task)
 
-    // 断点续传使用流式传输，新传输使用 fastGet（并发，速度快很多）
-    if (startPosition > 0) {
+    // 可恢复传输使用流式传输，这样暂停时可以真正中断底层流。
+    if (resumable) {
       return this._downloadWithStream(
         sftp,
         remotePath,
@@ -481,25 +613,25 @@ export class SFTPManager extends EventEmitter {
     }
 
     return new Promise((resolve, reject) => {
-      let lastTransferred = 0
-      let lastTime = Date.now()
       let lastRecordUpdate = Date.now()
+      const speedSample: RealtimeSpeedSample = {
+        transferred: 0,
+        time: Date.now(),
+        speed: 0
+      }
 
       const stepCb = (totalTransferred: number, _chunk: number, total: number) => {
         const now = Date.now()
-        const timeDiff = (now - lastTime) / 1000
-        const bytesDiff = totalTransferred - lastTransferred
-        const speed = timeDiff > 0 ? bytesDiff / timeDiff : 0
+        const speed = this.updateRealtimeSpeedSample(
+          speedSample,
+          totalTransferred,
+          now,
+          totalTransferred >= total
+        )
         const remaining = total - totalTransferred
         const eta = speed > 0 ? remaining / speed : 0
 
-        task.progress = {
-          transferred: totalTransferred,
-          total,
-          percentage: (totalTransferred / total) * 100,
-          speed,
-          eta
-        }
+        task.progress = this.createProgress(totalTransferred, total, speed, eta)
 
         if (onProgress) onProgress(task.progress)
         this.emit('progress', taskId, task.progress)
@@ -514,8 +646,6 @@ export class SFTPManager extends EventEmitter {
           lastRecordUpdate = now
         }
 
-        lastTransferred = totalTransferred
-        lastTime = now
       }
 
       sftp.fastGet(
@@ -569,31 +699,39 @@ export class SFTPManager extends EventEmitter {
         start: startPosition,
         highWaterMark: CHUNK_SIZE
       })
-      const writeStream = fs.createWriteStream(localPath, { flags: 'a', highWaterMark: CHUNK_SIZE })
+      const writeStream = fs.createWriteStream(localPath, {
+        flags: startPosition > 0 ? 'a' : 'w',
+        highWaterMark: CHUNK_SIZE
+      })
 
       // 注册流引用，供 pauseTask 使用
-      this.pauseControllers.set(taskId, { paused: false, readStream, writeStream })
+      const pauseController = { paused: false, readStream, writeStream }
+      this.pauseControllers.set(taskId, pauseController)
 
       let transferred = startPosition
-      let lastTransferred = startPosition
-      let lastTime = Date.now()
       let lastRecordUpdate = Date.now()
+      const speedSample: RealtimeSpeedSample = {
+        transferred: startPosition,
+        time: Date.now(),
+        speed: 0
+      }
 
       const progressInterval = setInterval(() => {
+        if (task.status !== 'active') {
+          return
+        }
+
         const now = Date.now()
-        const timeDiff = (now - lastTime) / 1000
-        const bytesDiff = transferred - lastTransferred
-        const speed = timeDiff > 0 ? bytesDiff / timeDiff : 0
+        const speed = this.updateRealtimeSpeedSample(
+          speedSample,
+          transferred,
+          now,
+          transferred >= totalSize
+        )
         const remaining = totalSize - transferred
         const eta = speed > 0 ? remaining / speed : 0
 
-        task.progress = {
-          transferred,
-          total: totalSize,
-          percentage: (transferred / totalSize) * 100,
-          speed,
-          eta
-        }
+        task.progress = this.createProgress(transferred, totalSize, speed, eta)
         if (onProgress) onProgress(task.progress)
         this.emit('progress', taskId, task.progress)
 
@@ -603,8 +741,6 @@ export class SFTPManager extends EventEmitter {
             .catch(console.error)
           lastRecordUpdate = now
         }
-        lastTransferred = transferred
-        lastTime = now
       }, 500)
 
       readStream.on('data', (chunk: Buffer | string) => {
@@ -613,9 +749,11 @@ export class SFTPManager extends EventEmitter {
 
       writeStream.on('close', async () => {
         clearInterval(progressInterval)
-        this.pauseControllers.delete(taskId)
+        if (this.pauseControllers.get(taskId) === pauseController) {
+          this.pauseControllers.delete(taskId)
+        }
         if (task.status === 'paused') {
-          resolve()
+          reject(new TransferPausedError(taskId))
           return
         }
         task.status = 'completed'
@@ -629,9 +767,11 @@ export class SFTPManager extends EventEmitter {
 
       writeStream.on('error', async (err: Error) => {
         clearInterval(progressInterval)
-        this.pauseControllers.delete(taskId)
+        if (this.pauseControllers.get(taskId) === pauseController) {
+          this.pauseControllers.delete(taskId)
+        }
         if (task.status === 'paused') {
-          resolve()
+          reject(new TransferPausedError(taskId))
           return
         }
         task.status = 'failed'
@@ -645,9 +785,11 @@ export class SFTPManager extends EventEmitter {
 
       readStream.on('error', async (err: Error) => {
         clearInterval(progressInterval)
-        this.pauseControllers.delete(taskId)
+        if (this.pauseControllers.get(taskId) === pauseController) {
+          this.pauseControllers.delete(taskId)
+        }
         if (task.status === 'paused') {
-          resolve()
+          reject(new TransferPausedError(taskId))
           return
         }
         task.status = 'failed'
@@ -824,9 +966,10 @@ export class SFTPManager extends EventEmitter {
       const controller = this.pauseControllers.get(taskId)
       if (controller) {
         controller.paused = true
-        // 暂停读取流，停止数据流动
         if (controller.readStream) {
-          controller.readStream.pause()
+          controller.readStream.pause?.()
+          controller.readStream.unpipe?.()
+          controller.readStream.destroy?.()
         }
         // 销毁写入流，中断传输
         if (controller.writeStream) {
@@ -836,7 +979,8 @@ export class SFTPManager extends EventEmitter {
 
       // 更新传输记录
       await transferRecordManager.updateRecord(taskId, {
-        status: 'paused'
+        status: 'paused',
+        transferred: task.progress.transferred
       })
 
       this.emit('paused', taskId)
@@ -856,29 +1000,41 @@ export class SFTPManager extends EventEmitter {
       throw new Error(`Transfer record not found: ${taskId}`)
     }
 
-    if (record.status !== 'paused') {
-      throw new Error(`Transfer is not paused: ${taskId}`)
+    if (!RESUMABLE_TRANSFER_STATUSES.has(record.status)) {
+      throw new Error(`Transfer is not resumable: ${taskId}`)
     }
 
-    // 根据类型恢复传输
-    if (record.type === 'upload') {
-      await this.uploadFile(
-        connectionId,
-        record.localPath,
-        record.remotePath,
-        taskId,
-        onProgress,
-        true // 启用断点续传
-      )
-    } else {
-      await this.downloadFile(
-        connectionId,
-        record.remotePath,
-        record.localPath,
-        taskId,
-        onProgress,
-        true // 启用断点续传
-      )
+    const runningTask = this.transferTasks.get(taskId)
+    if (record.status === 'active' && runningTask?.status === 'active') {
+      throw new Error(`Transfer is still active: ${taskId}`)
+    }
+
+    try {
+      // 根据类型恢复传输
+      if (record.type === 'upload') {
+        await this.uploadFile(
+          connectionId,
+          record.localPath,
+          record.remotePath,
+          taskId,
+          onProgress,
+          true // 启用断点续传
+        )
+      } else {
+        await this.downloadFile(
+          connectionId,
+          record.remotePath,
+          record.localPath,
+          taskId,
+          onProgress,
+          true // 启用断点续传
+        )
+      }
+    } catch (error) {
+      if (error instanceof TransferPausedError) {
+        return
+      }
+      throw error
     }
   }
 
@@ -886,10 +1042,14 @@ export class SFTPManager extends EventEmitter {
    * 获取未完成的传输
    */
   getIncompleteTransfers(connectionId?: string): TransferRecord[] {
-    if (connectionId) {
-      return transferRecordManager.getIncompleteTransfersByConnection(connectionId)
-    }
-    return transferRecordManager.getIncompleteTransfers()
+    const records = connectionId
+      ? transferRecordManager.getIncompleteTransfersByConnection(connectionId)
+      : transferRecordManager.getIncompleteTransfers()
+
+    return records.filter((record) => {
+      const runningTask = this.transferTasks.get(record.id)
+      return !(record.status === 'active' && runningTask?.status === 'active')
+    })
   }
 
   /**
@@ -955,12 +1115,17 @@ export class SFTPManager extends EventEmitter {
    */
   async uploadFiles(
     connectionId: string,
-    files: Array<{ localPath: string; remotePath: string; taskId?: string }>,
+    files: UploadFileRequest[],
     onProgress?: (taskId: string, progress: TransferProgress) => void
-  ): Promise<{ success: string[]; failed: Array<{ path: string; error: string }> }> {
+  ): Promise<{
+    success: string[]
+    failed: Array<{ path: string; error: string }>
+    paused: string[]
+  }> {
     const results = {
       success: [] as string[],
-      failed: [] as Array<{ path: string; error: string }>
+      failed: [] as Array<{ path: string; error: string }>,
+      paused: [] as string[]
     }
 
     await this.runConcurrent(files, this.getMaxConcurrentTransfers(), async (file) => {
@@ -971,10 +1136,16 @@ export class SFTPManager extends EventEmitter {
           file.localPath,
           file.remotePath,
           taskId,
-          onProgress ? (progress) => onProgress(taskId, progress) : undefined
+          onProgress ? (progress) => onProgress(taskId, progress) : undefined,
+          true,
+          file.resumeFromExisting === true
         )
         results.success.push(file.localPath)
       } catch (error: any) {
+        if (error instanceof TransferPausedError) {
+          results.paused.push(file.localPath)
+          return
+        }
         results.failed.push({
           path: file.localPath,
           error: error.message
@@ -990,12 +1161,17 @@ export class SFTPManager extends EventEmitter {
    */
   async downloadFiles(
     connectionId: string,
-    files: Array<{ remotePath: string; localPath: string; taskId?: string }>,
+    files: DownloadFileRequest[],
     onProgress?: (taskId: string, progress: TransferProgress) => void
-  ): Promise<{ success: string[]; failed: Array<{ path: string; error: string }> }> {
+  ): Promise<{
+    success: string[]
+    failed: Array<{ path: string; error: string }>
+    paused: string[]
+  }> {
     const results = {
       success: [] as string[],
-      failed: [] as Array<{ path: string; error: string }>
+      failed: [] as Array<{ path: string; error: string }>,
+      paused: [] as string[]
     }
 
     await this.runConcurrent(files, this.getMaxConcurrentTransfers(), async (file) => {
@@ -1006,10 +1182,16 @@ export class SFTPManager extends EventEmitter {
           file.remotePath,
           file.localPath,
           taskId,
-          onProgress ? (progress) => onProgress(taskId, progress) : undefined
+          onProgress ? (progress) => onProgress(taskId, progress) : undefined,
+          true,
+          file.resumeFromExisting === true
         )
         results.success.push(file.remotePath)
       } catch (error: any) {
+        if (error instanceof TransferPausedError) {
+          results.paused.push(file.remotePath)
+          return
+        }
         results.failed.push({
           path: file.remotePath,
           error: error.message

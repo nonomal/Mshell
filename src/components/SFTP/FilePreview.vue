@@ -97,7 +97,9 @@ interface FileInfo {
   name: string
   path: string
   size: number
-  type: 'file' | 'directory'
+  type: 'file' | 'directory' | 'symlink'
+  modifyTime: Date
+  permissions?: number
 }
 
 interface Props {

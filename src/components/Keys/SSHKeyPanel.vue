@@ -351,6 +351,10 @@ const handleImportSingle = async () => {
   try {
     const fileResult = await window.electronAPI.sshKey?.selectPrivateKeyFile?.()
     if (fileResult?.canceled) return
+    if (!fileResult?.success || !fileResult.data) {
+      ElMessage.error(fileResult?.error || '未选择密钥文件')
+      return
+    }
 
     const name = await ElMessageBox.prompt('请输入密钥名称', '导入密钥', {
       inputPattern: /.+/,
@@ -415,9 +419,6 @@ const handleImportBatch = async () => {
   }
 }
 
-// 保留旧方法名以兼容
-const handleImport = handleImportSingle
-
 const handleCopyPublicKey = async (key: any) => {
   try {
     if (!key.publicKey || key.publicKey === 'Public key not available' || key.publicKey === 'Public key not provided') {
@@ -435,6 +436,10 @@ const handleExport = async (key: any) => {
   try {
     const pathResult = await window.electronAPI.sshKey?.selectExportPath?.(key.name)
     if (pathResult?.canceled) return
+    if (!pathResult?.success || !pathResult.data) {
+      ElMessage.error(pathResult?.error || '未选择导出路径')
+      return
+    }
 
     const result = await window.electronAPI.sshKey?.export?.(key.id, pathResult.data)
     if (result?.success) {

@@ -484,18 +484,6 @@ const getSnippetsByCategory = (category: string) => {
   })
 }
 
-const filteredSnippets = computed(() => {
-  return snippets.value.filter(snippet => {
-    const matchesSearch =
-      !searchQuery.value ||
-      snippet.name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-      snippet.command.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-      snippet.description?.toLowerCase().includes(searchQuery.value.toLowerCase())
-
-    return matchesSearch
-  })
-})
-
 const snippetVariables = computed(() => {
   if (!usingSnippet.value) return []
   return usingSnippet.value.variables || []
