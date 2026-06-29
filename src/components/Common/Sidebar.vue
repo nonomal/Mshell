@@ -71,7 +71,7 @@ import { Connection, FolderOpened, Share, Document, Tickets, Setting, DataAnalys
 import logoImg from '@/assets/logo.png'
 
 const activeMenu = ref('sessions')
-const appVersion = ref('v0.1.3')
+const appVersion = ref('v0.2.7')
 
 onMounted(async () => {
   if (window.electronAPI.app && window.electronAPI.app.getVersion) {

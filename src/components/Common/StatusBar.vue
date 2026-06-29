@@ -38,7 +38,7 @@ const props = withDefaults(defineProps<Props>(), {
   activeConnections: 0,
   currentSession: null,
   transferCount: 0,
-  appVersion: 'v0.1.3' // Updated default
+  appVersion: 'v0.2.7'
 })
 
 const dynamicVersion = ref('')

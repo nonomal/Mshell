@@ -83,6 +83,12 @@
             <template #modifyTime="{ row }">
               {{ formatTime({ modifyTime: row.modifyTime }) }}
             </template>
+            <template #empty>
+              <div class="directory-empty">
+                <el-icon :size="40"><FolderOpened /></el-icon>
+                <p>当前目录为空</p>
+              </div>
+            </template>
           </VirtualTable>
         </div>
       </div>
@@ -242,6 +248,12 @@
               </template>
               <template #permissions="{ row }">
                 <span class="permissions">{{ formatPermissions(row.permissions) }}</span>
+              </template>
+              <template #empty>
+                <div class="directory-empty">
+                  <el-icon :size="40"><FolderOpened /></el-icon>
+                  <p>远程目录为空</p>
+                </div>
               </template>
             </VirtualTable>
           </FileDropZone>
@@ -3452,54 +3464,51 @@ const extractRemoteFileTo = async (file: FileInfo) => {
 </script>
 
 <style scoped>
-/*
-  Re-architected Layout System
-  Using CSS Grid for absolute column discipline
-*/
 .sftp-panel {
   height: 100%;
   width: 100%;
   position: relative;
   display: flex;
   flex-direction: column;
-  background-color: var(--bg-main);
-  font-family: 'Inter', system-ui, sans-serif;
+  background:
+    linear-gradient(180deg, rgba(var(--primary-color-rgb), 0.04), transparent 150px),
+    var(--bg-main);
+  font-family: var(--font-sans);
   overflow: hidden;
 }
 
-/* Main Content Area: Grid Layout */
 .dual-panel {
-  flex: 1; /* Occupy all available vertical space */
+  flex: 1;
   display: grid;
-  grid-template-columns: 1fr 50px 1fr; /* Strict 50/50 split with fixed control strip */
-  grid-template-rows: 100%;
+  grid-template-columns: minmax(0, 1fr) 56px minmax(0, 1fr);
+  gap: 12px;
   overflow: hidden;
   position: relative;
+  padding: 14px 16px 16px;
 }
 
-/* File Browser Container */
 .file-browser {
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background-color: var(--bg-main);
-  border-right: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  min-width: 0;
 }
 
-.file-browser:last-child {
-  border-right: none;
-}
-
-/* Professional Header Design */
 .browser-header {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid #3e3e3e;
+  gap: 10px;
+  padding: 14px 14px 12px;
+  background:
+    linear-gradient(180deg, rgba(var(--primary-color-rgb), 0.04), transparent 72px),
+    var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .header-title {
@@ -3522,8 +3531,8 @@ const extractRemoteFileTo = async (file: FileInfo) => {
 .browser-header h3 {
   margin: 0;
   font-size: var(--text-base);
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-weight: 700;
+  color: var(--text-primary);
 }
 
 .drive-selector {
@@ -3538,10 +3547,12 @@ const extractRemoteFileTo = async (file: FileInfo) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
-  background: var(--bg-main);
-  border: 1px solid #007acc;
-  border-radius: 4px;
+  gap: 10px;
+  min-height: 32px;
+  padding: 6px 8px 6px 10px;
+  background: rgba(var(--primary-color-rgb), 0.08);
+  border: 1px solid rgba(var(--primary-color-rgb), 0.22);
+  border-radius: var(--radius-sm);
 }
 
 .path-input {
@@ -3550,6 +3561,7 @@ const extractRemoteFileTo = async (file: FileInfo) => {
 
 .toolbar {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -3566,42 +3578,25 @@ const extractRemoteFileTo = async (file: FileInfo) => {
   gap: 8px;
 }
 
-.breadcrumb-wrapper {
-  flex: 1;
-  height: 30px;
-  background: var(--bg-main);
-  border: 1px solid var(--border-color);
-  border-radius: 4px; /* Standard radius */
-  display: flex;
-  align-items: center;
-  padding: 0 10px;
-  transition: border-color 0.2s;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
-}
-
-.breadcrumb-wrapper:hover {
-  border-color: var(--text-tertiary);
-}
-
-.path-text {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  font-size: var(--text-sm);
-  color: var(--success-color);
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .session-info {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.session-info span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .connected-icon {
   color: var(--success-color);
   font-size: var(--text-lg);
+  flex-shrink: 0;
 }
 
 .session-option {
@@ -3615,24 +3610,35 @@ const extractRemoteFileTo = async (file: FileInfo) => {
   color: var(--text-tertiary);
 }
 
-/* Central Control Strip */
 .transfer-controls {
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  gap: 16px;
-  background: var(--bg-tertiary);
-  border-right: 1px solid var(--border-color);
-  border-left: 1px solid var(--border-color);
-  z-index: 20;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
-  padding: 0 12px;
+  gap: 12px;
+  z-index: 10;
+  padding: 0;
+}
+
+.transfer-controls::before {
+  content: '';
+  width: 1px;
+  flex: 1;
+  min-height: 44px;
+  background: linear-gradient(180deg, transparent, var(--border-color), transparent);
+}
+
+.transfer-controls::after {
+  content: '';
+  width: 1px;
+  flex: 1;
+  min-height: 44px;
+  background: linear-gradient(180deg, transparent, var(--border-color), transparent);
 }
 
 .transfer-btn {
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   border: none;
   cursor: pointer;
@@ -3640,12 +3646,13 @@ const extractRemoteFileTo = async (file: FileInfo) => {
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-md);
 }
 
 .transfer-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.42;
   cursor: not-allowed;
+  filter: grayscale(0.3);
 }
 
 .transfer-btn .el-icon {
@@ -3659,7 +3666,8 @@ const extractRemoteFileTo = async (file: FileInfo) => {
 
 .upload-btn:hover:not(:disabled) {
   background: var(--primary-hover);
-  transform: scale(1.05);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lg);
 }
 
 .download-btn {
@@ -3668,27 +3676,68 @@ const extractRemoteFileTo = async (file: FileInfo) => {
 
 .download-btn:hover:not(:disabled) {
   background: #16a34a;
-  transform: scale(1.05);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lg);
 }
 
-/* File List Area */
 .file-list {
   flex: 1;
   position: relative;
-  overflow: auto; /* Internal scroll */
+  overflow: hidden;
+  min-height: 0;
+  background: var(--bg-secondary);
 }
 
-/* VirtualTable 选中状态样式 */
+.file-list :deep(.virtual-table) {
+  position: relative;
+  border: none;
+  border-radius: 0;
+  background: var(--bg-secondary);
+}
+
+.file-list :deep(.table-header) {
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.file-list :deep(.table-header-cell) {
+  padding: 10px 14px;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.file-list :deep(.table-row) {
+  border-bottom: 1px solid var(--border-light);
+}
+
+.file-list :deep(.table-row:hover),
+.file-list :deep(.table-row.hover) {
+  background: rgba(var(--primary-color-rgb), 0.06);
+}
+
 .file-list :deep(.table-row.selected) {
-  background: rgba(14, 165, 233, 0.2) !important;
+  background: rgba(var(--primary-color-rgb), 0.12) !important;
   border-left: 3px solid var(--primary-color);
 }
 
 .file-list :deep(.table-row.selected:hover) {
-  background: rgba(14, 165, 233, 0.25) !important;
+  background: rgba(var(--primary-color-rgb), 0.16) !important;
 }
 
-/* Table Enhancements */
+.file-list :deep(.table-cell) {
+  padding: 0 14px;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.file-list :deep(.table-empty) {
+  position: absolute;
+  inset: 41px 0 0;
+  pointer-events: none;
+  color: var(--text-tertiary);
+}
+
 .file-list :deep(.el-table) {
   --el-table-header-bg-color: var(--bg-main);
   --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.04);
@@ -3722,6 +3771,13 @@ const extractRemoteFileTo = async (file: FileInfo) => {
   font-weight: 500;
   color: var(--text-primary);
   transition: color 0.2s;
+  min-width: 0;
+}
+
+.file-name-cell span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .file-list :deep(.el-table__row:hover) .file-name-cell {
@@ -3730,19 +3786,28 @@ const extractRemoteFileTo = async (file: FileInfo) => {
 
 /* Icons */
 .file-icon {
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+  color: var(--primary-color);
+  flex-shrink: 0;
 }
 
-/* Transfer Queue Entry */
 .transfer-queue-entry {
   position: absolute;
-  right: 20px;
-  bottom: 20px;
+  right: 28px;
+  bottom: 26px;
   z-index: 40;
 }
 
 .queue-entry-button {
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+  min-width: 112px;
+  height: 34px;
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-lg);
+  gap: 6px;
+}
+
+.queue-entry-button:not(.el-button--primary) {
+  background: var(--bg-elevated) !important;
+  border-color: var(--border-medium) !important;
 }
 
 .queue-entry-badge {
@@ -3925,7 +3990,36 @@ const extractRemoteFileTo = async (file: FileInfo) => {
   align-items: center;
   justify-content: center;
   color: var(--text-tertiary);
-  opacity: 0.5;
+  gap: 10px;
+  padding: 32px;
+  text-align: center;
+}
+
+.empty-state .el-icon {
+  color: var(--text-disabled);
+}
+
+.empty-state p {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.directory-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-tertiary);
+}
+
+.directory-empty .el-icon {
+  color: var(--text-disabled);
+}
+
+.directory-empty p {
+  margin: 0;
+  font-size: var(--text-sm);
 }
 
 .error-state {
@@ -3945,14 +4039,34 @@ const extractRemoteFileTo = async (file: FileInfo) => {
 
 /* Button & Input Overrides for "Tightness" */
 :deep(.el-button--small) {
-  padding: 6px 10px;
+  padding: 6px 11px;
   font-weight: 500;
+  border-radius: var(--radius-sm);
 }
 
 :deep(.el-input__wrapper) {
+  min-height: 32px;
   box-shadow: none !important;
   border: 1px solid var(--border-color);
-  background-color: var(--bg-main) !important;
+  background-color: var(--bg-tertiary) !important;
+  border-radius: var(--radius-sm);
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease;
+}
+
+:deep(.el-input__wrapper:hover),
+:deep(.el-input__wrapper.is-focus) {
+  border-color: rgba(var(--primary-color-rgb), 0.45);
+  background-color: var(--bg-elevated) !important;
+}
+
+:deep(.el-select .el-input__wrapper) {
+  background-color: var(--bg-tertiary) !important;
+}
+
+:deep(.el-select-dropdown__item) {
+  font-size: var(--text-sm);
 }
 
 /* Scrollbar Polish */

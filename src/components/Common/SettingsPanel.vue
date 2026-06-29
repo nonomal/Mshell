@@ -1442,7 +1442,7 @@ const DEFAULT_RESTORE_OPTIONS = [
 const restoreOptions = ref<string[]>([...DEFAULT_RESTORE_OPTIONS])
 const backupLoading = ref(false)
 
-const appVersion = ref('0.1.3')
+const appVersion = ref('0.2.7')
 
 // 更新相关状态
 const updateState = ref({
