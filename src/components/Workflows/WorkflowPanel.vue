@@ -891,4 +891,38 @@ const getStatusText = (status: string) => {
   display: block;
   font-size: var(--text-xs);
 }
+
+:global(:root.app-appearance-terminal .workflow-panel) {
+  background: var(--bg-main);
+}
+
+:global(:root.app-appearance-terminal .stats-bar) {
+  gap: 18px;
+  padding: 10px 12px;
+}
+
+:global(:root.app-appearance-terminal .stat-value) {
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+}
+
+:global(:root.app-appearance-terminal .stat-label) {
+  font-size: var(--text-xs);
+}
+
+:global(:root.app-appearance-terminal .panel-content) {
+  padding: 12px;
+}
+
+:global(:root.app-appearance-terminal .type-item),
+:global(:root.app-appearance-terminal .case-study) {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+:global(:root.app-appearance-terminal .case-step .step-num) {
+  border-radius: var(--radius-xs);
+  color: var(--text-inverse);
+}
 </style>

@@ -17,6 +17,7 @@
 
   /* 专业深色主题 - 更舒适的对比度 */
   --bg-main: #0a0e1a;
+  --bg-primary: var(--bg-main);
   /* 更深的主背景 */
   --bg-secondary: #151b2e;
   /* 次级背景 */
@@ -135,6 +136,7 @@
 
   /* 背景色 - 浅色 */
   --bg-main: #f8fafc;
+  --bg-primary: var(--bg-main);
   /* Slate 50 */
   --bg-secondary: #ffffff;
   /* White */
@@ -193,4 +195,133 @@
   --el-font-size-base: var(--text-sm);
   --el-font-size-small: var(--text-xs);
   --el-font-size-extra-small: 10px;
+}
+
+/* 终端简洁外观：更高信息密度、更少装饰、更明确的边界 */
+:root.app-appearance-terminal {
+  --primary-color: #48e6b1;
+  --primary-color-rgb: 72, 230, 177;
+  --primary-hover: #2dd49f;
+  --primary-light: #7ff7cd;
+  --accent-color: #36c8ff;
+  --accent-hover: #15a8df;
+  --terminal-warn: #f7c66f;
+  --terminal-line: rgba(72, 230, 177, 0.32);
+
+  --bg-main: #050708;
+  --bg-primary: var(--bg-main);
+  --bg-secondary: #0a0f10;
+  --bg-tertiary: #0e1718;
+  --bg-elevated: #121d1e;
+  --bg-hover: #162829;
+
+  --glass-bg: var(--bg-secondary);
+  --glass-bg-light: var(--bg-tertiary);
+  --glass-border: var(--border-color);
+  --glass-border-hover: var(--border-medium);
+  --glass-blur: 0px;
+
+  --text-primary: #d7f7ec;
+  --text-secondary: #91b9ad;
+  --text-tertiary: #5f8078;
+  --text-disabled: #38504b;
+  --text-inverse: #03100c;
+
+  --border-color: #183130;
+  --border-light: rgba(72, 230, 177, 0.1);
+  --border-medium: rgba(72, 230, 177, 0.2);
+  --border-strong: rgba(72, 230, 177, 0.34);
+
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --shadow-xl: none;
+  --shadow-glow: none;
+
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 5px;
+  --radius-xl: 6px;
+
+  --spacing-xs: 3px;
+  --spacing-sm: 6px;
+  --spacing-md: 10px;
+  --spacing-lg: 14px;
+  --spacing-xl: 20px;
+  --spacing-2xl: 28px;
+
+  --el-bg-color: var(--bg-main);
+  --el-bg-color-overlay: var(--bg-elevated);
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-secondary);
+  --el-border-color: var(--border-color);
+  --el-border-color-light: var(--border-light);
+  --el-border-color-lighter: var(--border-light);
+  --el-fill-color-blank: var(--bg-secondary);
+  --el-fill-color: var(--bg-tertiary);
+  --el-border-radius-base: var(--radius-md);
+  --el-border-radius-small: var(--radius-sm);
+  --el-font-size-extra-large: var(--text-xl);
+  --el-font-size-large: var(--text-lg);
+  --el-font-size-medium: var(--text-base);
+  --el-font-size-base: var(--text-md);
+  --el-font-size-small: var(--text-sm);
+  --el-font-size-extra-small: var(--text-xs);
+}
+
+:root.light-theme.app-appearance-terminal {
+  --primary-color: #047857;
+  --primary-color-rgb: 4, 120, 87;
+  --primary-hover: #065f46;
+  --primary-light: #10b981;
+  --accent-color: #0369a1;
+  --accent-hover: #075985;
+  --terminal-warn: #a16207;
+  --terminal-line: rgba(4, 120, 87, 0.22);
+
+  --bg-main: #eef3ef;
+  --bg-primary: var(--bg-main);
+  --bg-secondary: #f8fbf9;
+  --bg-tertiary: #e3ebe6;
+  --bg-elevated: #ffffff;
+  --bg-hover: #d8e4dd;
+
+  --glass-bg: var(--bg-secondary);
+  --glass-bg-light: var(--bg-tertiary);
+  --glass-border: var(--border-color);
+  --glass-border-hover: var(--border-medium);
+
+  --text-primary: #11251f;
+  --text-secondary: #426258;
+  --text-tertiary: #6c837b;
+  --text-disabled: #9aada6;
+  --text-inverse: #ffffff;
+
+  --border-color: #bdd0c6;
+  --border-light: rgba(4, 120, 87, 0.1);
+  --border-medium: rgba(4, 120, 87, 0.18);
+  --border-strong: rgba(4, 120, 87, 0.3);
+
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --shadow-xl: none;
+  --shadow-glow: none;
+
+  --el-bg-color: var(--bg-main);
+  --el-bg-color-overlay: var(--bg-elevated);
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-secondary);
+  --el-border-color: var(--border-color);
+  --el-border-color-light: var(--border-light);
+  --el-border-color-lighter: var(--border-light);
+  --el-fill-color-blank: var(--bg-secondary);
+  --el-fill-color: var(--bg-tertiary);
+  --el-font-size-extra-large: var(--text-xl);
+  --el-font-size-large: var(--text-lg);
+  --el-font-size-medium: var(--text-base);
+  --el-font-size-base: var(--text-md);
+  --el-font-size-small: var(--text-sm);
+  --el-font-size-extra-small: var(--text-xs);
 }

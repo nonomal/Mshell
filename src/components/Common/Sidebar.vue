@@ -60,14 +60,37 @@
 
     <!-- 版本信息 -->
     <div class="sidebar-footer">
-      <div class="version-badge">{{ appVersion }}</div>
+      <el-tooltip
+        :content="`关于 MShell · ${appVersion}`"
+        placement="right"
+        :offset="12"
+        :show-after="300"
+      >
+        <button class="about-button" type="button" aria-label="关于 MShell" @click="handleAboutClick">
+          <el-icon class="about-icon" :size="18">
+            <InfoFilled />
+          </el-icon>
+        </button>
+      </el-tooltip>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { Connection, FolderOpened, Share, Document, Tickets, Setting, DataAnalysis, Key, Files, Timer } from '@element-plus/icons-vue'
+import {
+  Connection,
+  FolderOpened,
+  Share,
+  Document,
+  Tickets,
+  Setting,
+  DataAnalysis,
+  Key,
+  Files,
+  Timer,
+  InfoFilled
+} from '@element-plus/icons-vue'
 import logoImg from '@/assets/logo.png'
 
 const activeMenu = ref('sessions')
@@ -103,12 +126,18 @@ const bottomMenuItems = [
 
 const emit = defineEmits<{
   menuSelect: [index: string]
+  aboutSelect: []
   version: [v: string]
 }>()
 
 const handleMenuSelect = (index: string) => {
   activeMenu.value = index
   emit('menuSelect', index)
+}
+
+const handleAboutClick = () => {
+  activeMenu.value = 'settings'
+  emit('aboutSelect')
 }
 </script>
 
@@ -300,7 +329,7 @@ const handleMenuSelect = (index: string) => {
   min-height: var(--spacing-md);
 }
 
-/* 底部版本信息 */
+/* 底部关于入口 */
 .sidebar-footer {
   padding: var(--spacing-sm);
   display: flex;
@@ -309,14 +338,29 @@ const handleMenuSelect = (index: string) => {
   flex-shrink: 0;
 }
 
-.version-badge {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  padding: 4px 8px;
+.about-button {
+  width: 34px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
   background: var(--bg-tertiary);
   border-radius: var(--radius-sm);
-  font-weight: 500;
-  letter-spacing: 0.5px;
+  color: var(--text-tertiary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.about-button:hover {
+  color: var(--primary-color);
+  border-color: var(--border-medium);
+  background: var(--bg-hover);
+}
+
+.about-icon {
+  flex: 0 0 auto;
 }
 
 /* 响应式 */
@@ -338,5 +382,98 @@ const handleMenuSelect = (index: string) => {
     width: 36px;
     height: 36px;
   }
+}
+
+:global(:root.app-appearance-terminal .sidebar) {
+  width: 46px;
+  background: var(--bg-secondary);
+  box-shadow: none;
+}
+
+:global(:root.app-appearance-terminal .sidebar-header) {
+  height: 40px;
+  padding: 5px;
+}
+
+:global(:root.app-appearance-terminal .logo-icon) {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+}
+
+:global(:root.app-appearance-terminal .logo-image) {
+  border-radius: var(--radius-sm);
+}
+
+:global(:root.app-appearance-terminal .logo-icon:hover) {
+  transform: none;
+}
+
+:global(:root.app-appearance-terminal .logo-glow) {
+  display: none;
+}
+
+:global(:root.app-appearance-terminal .sidebar-nav) {
+  gap: 2px;
+  padding: 8px 5px;
+}
+
+:global(:root.app-appearance-terminal .nav-item) {
+  width: 34px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+}
+
+:global(:root.app-appearance-terminal .nav-item::before) {
+  border-radius: var(--radius-sm);
+}
+
+:global(:root.app-appearance-terminal .nav-item:hover) {
+  color: var(--text-primary);
+  border-color: var(--border-medium);
+}
+
+:global(:root.app-appearance-terminal .nav-item.is-active) {
+  color: var(--primary-color);
+  background: var(--bg-tertiary);
+  border-color: var(--border-medium);
+}
+
+:global(:root.app-appearance-terminal .nav-icon),
+:global(:root.app-appearance-terminal .nav-item:hover .nav-icon),
+:global(:root.app-appearance-terminal .nav-item.is-active .nav-icon) {
+  transform: none;
+}
+
+:global(:root.app-appearance-terminal .nav-indicator) {
+  width: 2px;
+  height: 0;
+  background: var(--primary-color);
+  border-radius: 0;
+}
+
+:global(:root.app-appearance-terminal .nav-item.is-active .nav-indicator) {
+  height: 20px;
+}
+
+:global(:root.app-appearance-terminal .sidebar-footer) {
+  padding: 6px 4px;
+}
+
+:global(:root.app-appearance-terminal .about-button) {
+  width: 34px;
+  height: 28px;
+  padding: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  border-color: var(--border-color);
+  color: var(--text-tertiary);
+}
+
+:global(:root.app-appearance-terminal .about-button:hover) {
+  background: var(--bg-tertiary);
+  border-color: var(--border-medium);
+  color: var(--primary-color);
 }
 </style>

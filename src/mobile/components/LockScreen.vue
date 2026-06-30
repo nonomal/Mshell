@@ -1,5 +1,5 @@
 <template>
-  <div class="lock-screen">
+  <div class="lock-screen" @click.stop @pointerdown.stop @touchstart.stop>
     <div class="lock-panel">
       <p class="eyebrow">MShell Security</p>
       <h2>已锁定</h2>

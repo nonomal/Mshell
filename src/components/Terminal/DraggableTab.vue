@@ -116,6 +116,13 @@ const handleDrop = (event: DragEvent) => {
   cursor: pointer;
   transition: all 0.2s;
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .draggable-tab.dragging {
@@ -132,15 +139,6 @@ const handleDrop = (event: DragEvent) => {
   width: 3px;
   background: var(--primary-color);
   border-radius: 2px;
-}
-
-.draggable-tab:not(.dragging):hover {
-  background: var(--bg-hover);
-}
-
-.draggable-tab.active {
-  background: var(--bg-primary);
-  border-bottom: 2px solid var(--primary-color);
 }
 
 .tab-drag-image {

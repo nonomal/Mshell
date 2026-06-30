@@ -761,6 +761,38 @@ const resetForm = () => {
   margin-top: 0;
 }
 
+:global(:root.app-appearance-terminal .session-template-panel) {
+  background: var(--bg-main);
+}
+
+:global(:root.app-appearance-terminal .panel-header) {
+  padding: 9px 12px;
+}
+
+:global(:root.app-appearance-terminal .panel-header h2) {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+}
+
+:global(:root.app-appearance-terminal .header-left) {
+  gap: 8px;
+}
+
+:global(:root.app-appearance-terminal .panel-content) {
+  padding: 12px;
+}
+
+:global(:root.app-appearance-terminal .template-info),
+:global(:root.app-appearance-terminal .no-variables) {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+
+:global(:root.app-appearance-terminal .connection-info),
+:global(:root.app-appearance-terminal .preview-connection) {
+  font-family: var(--font-mono);
+}
+
 .guide-content p {
   margin: 0 0 12px 0;
   font-size: var(--text-base);

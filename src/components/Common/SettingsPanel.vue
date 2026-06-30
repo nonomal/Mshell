@@ -27,12 +27,24 @@
                 <el-switch v-model="settings.general.closeToTray" @change="saveSettings" />
                 <span class="form-hint">仅关闭按钮隐藏到托盘</span>
               </el-form-item>
-              <el-form-item label="主题">
+              <el-form-item label="颜色模式">
                 <el-select v-model="settings.general.theme" style="width: 200px">
                   <el-option label="自动" value="auto" />
                   <el-option label="深色" value="dark" />
                   <el-option label="浅色" value="light" />
                 </el-select>
+              </el-form-item>
+              <el-form-item label="外观风格">
+                <el-radio-group v-model="settings.general.appearance" class="appearance-options">
+                  <el-radio-button
+                    v-for="option in appearanceOptions"
+                    :key="option.value"
+                    :label="option.value"
+                  >
+                    {{ option.label }}
+                  </el-radio-button>
+                </el-radio-group>
+                <span class="form-hint">仅影响软件框架外观，不改变 SSH 终端配色方案</span>
               </el-form-item>
               <!-- 语言切换暂时禁用，当前代码大部分为中文硬编码 -->
               <!--
@@ -1309,6 +1321,7 @@ import { ref, onMounted, toRaw, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download, Upload, Refresh, Lock, Unlock } from '@element-plus/icons-vue'
 import { themes } from '@/utils/terminal-themes'
+import { applyAppShellTheme } from '@/utils/app-appearance'
 import { keyboardShortcutManager, type ShortcutConfig } from '@/utils/keyboard-shortcuts'
 import {
   terminalShortcutsManager,
@@ -1321,11 +1334,26 @@ import logoImg from '@/assets/logo.png'
 // AI 设置面板引用
 const aiSettingsPanelRef = ref<InstanceType<typeof AISettingsPanel> | null>(null)
 
-const activeTab = ref('general')
+const props = withDefaults(
+  defineProps<{
+    initialTab?: string
+    tabRequestKey?: number
+  }>(),
+  {
+    initialTab: 'general',
+    tabRequestKey: 0
+  }
+)
+
+const activeTab = ref(props.initialTab)
 
 // 主题相关状态
 const availableThemes = themes
 const currentTheme = ref('dark')
+const appearanceOptions = [
+  { label: '现代', value: 'modern' },
+  { label: '终端简洁', value: 'terminal' }
+]
 
 const settings = ref({
   general: {
@@ -1333,7 +1361,8 @@ const settings = ref({
     minimizeToTray: false,
     closeToTray: false,
     language: 'zh-CN',
-    theme: 'dark' as 'light' | 'dark' | 'auto'
+    theme: 'dark' as 'light' | 'dark' | 'auto',
+    appearance: 'modern' as 'modern' | 'terminal'
   },
   terminal: {
     fontSize: 14,
@@ -1563,11 +1592,33 @@ const defaultShortcuts: Record<string, Omit<ShortcutConfig, 'action'>> = {
 watch(
   () => settings.value.general.theme,
   (newTheme) => {
+    applyAppShellTheme({
+      theme: newTheme,
+      appearance: settings.value.general.appearance
+    })
+
     if (newTheme === 'light' && settings.value.terminal.theme === 'dark') {
       settings.value.terminal.theme = 'light'
     } else if (newTheme === 'dark' && settings.value.terminal.theme === 'light') {
       settings.value.terminal.theme = 'dark'
     }
+  }
+)
+
+watch(
+  () => settings.value.general.appearance,
+  (appearance) => {
+    applyAppShellTheme({
+      theme: settings.value.general.theme,
+      appearance
+    })
+  }
+)
+
+watch(
+  () => props.tabRequestKey,
+  () => {
+    activeTab.value = props.initialTab
   }
 )
 
@@ -1609,18 +1660,40 @@ const loadSettings = async () => {
         security: { ...settings.value.security, ...saved.security },
         updates: { ...settings.value.updates, ...saved.updates }
       }
+      currentTheme.value = settings.value.terminal.theme
       if (saved.terminalShortcuts) {
         terminalShortcutsManager.replaceAll(saved.terminalShortcuts)
         terminalShortcuts.value = terminalShortcutsManager.getAll()
       }
     }
+    await ensureSftpDefaultLocalPath()
   } catch (error) {
     console.error('Failed to load settings:', error)
   }
 }
 
+const getSystemDownloadsPath = async () => {
+  try {
+    return (await window.electronAPI.app.getDownloadsPath()) || ''
+  } catch (error) {
+    console.warn('[SettingsPanel] Failed to get system downloads path:', error)
+    return ''
+  }
+}
+
+const ensureSftpDefaultLocalPath = async () => {
+  if (settings.value.sftp.defaultLocalPath) return
+
+  const downloadsPath = await getSystemDownloadsPath()
+  if (downloadsPath) {
+    settings.value.sftp.defaultLocalPath = downloadsPath
+  }
+}
+
 const saveSettings = async () => {
   try {
+    await ensureSftpDefaultLocalPath()
+
     // 保存常规设置
     await window.electronAPI.settings.update(toRaw(settings.value))
 
@@ -2499,7 +2572,9 @@ const applyTheme = async (themeKey: string) => {
 
   try {
     await window.electronAPI.settings.update({
+      general: toRaw(settings.value.general),
       terminal: {
+        ...toRaw(settings.value.terminal),
         theme: themeKey
       }
     })
@@ -3599,6 +3674,83 @@ const testShortcuts = () => {
   display: flex;
   gap: var(--spacing-sm);
   justify-content: center;
+}
+
+:global(:root.app-appearance-terminal .settings-panel) {
+  background: var(--bg-main);
+}
+
+:global(:root.app-appearance-terminal .panel-header) {
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+}
+
+:global(:root.app-appearance-terminal .panel-header h2) {
+  font-size: var(--text-xl);
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+}
+
+:global(:root.app-appearance-terminal .settings-tabs .el-tabs__header) {
+  justify-content: flex-start;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+:global(:root.app-appearance-terminal .settings-tabs .el-tabs__nav-wrap) {
+  justify-content: flex-start;
+}
+
+:global(:root.app-appearance-terminal .settings-tabs .el-tabs__item) {
+  height: 38px;
+  padding: 0 14px;
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+}
+
+:global(:root.app-appearance-terminal .settings-tabs .el-tabs__content) {
+  height: calc(100% - 39px);
+  padding: 18px;
+}
+
+:global(:root.app-appearance-terminal .settings-section) {
+  margin-bottom: 22px;
+}
+
+:global(:root.app-appearance-terminal .settings-section .el-form-item) {
+  margin-bottom: 16px;
+}
+
+:global(:root.app-appearance-terminal .settings-section .el-form-item__label) {
+  width: 152px;
+  font-family: var(--font-mono);
+  font-size: var(--text-md) !important;
+  line-height: 32px;
+}
+
+:global(:root.app-appearance-terminal .settings-section h3) {
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  font-size: var(--text-lg);
+  font-family: var(--font-mono);
+}
+
+:global(:root.app-appearance-terminal .form-hint) {
+  font-size: var(--text-sm) !important;
+  line-height: 1.5;
+}
+
+:global(:root.app-appearance-terminal .shortcut-item),
+:global(:root.app-appearance-terminal .theme-item),
+:global(:root.app-appearance-terminal .restore-options) {
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+}
+
+:global(:root.app-appearance-terminal .shortcut-item:hover),
+:global(:root.app-appearance-terminal .theme-item:hover) {
+  transform: none;
+  box-shadow: none;
 }
 
 /* 会话锁定样式 */

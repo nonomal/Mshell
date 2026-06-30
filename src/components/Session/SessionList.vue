@@ -60,9 +60,10 @@
               <VirtualList
                 v-if="getGroupSessions(group.id).length > 0"
                 :items="getGroupSessions(group.id)"
-                :item-height="SESSION_ITEM_HEIGHT"
+                :item-height="sessionItemHeight"
                 :buffer="3"
                 key-field="id"
+                disable-inner-scroll
               >
                 <template #default="{ item: session, index }">
                   <DraggableSessionItem
@@ -165,9 +166,10 @@
             <VirtualList
               v-if="ungroupedSessions.length > 0"
               :items="ungroupedSessions"
-              :item-height="SESSION_ITEM_HEIGHT"
+              :item-height="sessionItemHeight"
               :buffer="3"
               key-field="id"
+              disable-inner-scroll
             >
               <template #default="{ item: session, index }">
                 <DraggableSessionItem
@@ -333,7 +335,7 @@
 
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { 
   Search, Connection, FolderAdd, Folder, Files, User, Monitor 
 } from '@element-plus/icons-vue'
@@ -355,7 +357,9 @@ const emit = defineEmits<{
 
 const searchQuery = ref('')
 const activeGroups = ref<string[]>(['ungrouped'])
-const SESSION_ITEM_HEIGHT = 54
+const MODERN_SESSION_ITEM_HEIGHT = 58
+const TERMINAL_SESSION_ITEM_HEIGHT = 44
+const isTerminalAppearance = ref(false)
 const showGroupDialog = ref(false)
 const showRenameDialog = ref(false)
 const showMoveDialog = ref(false)
@@ -404,8 +408,34 @@ const getGroupSessions = (groupId: string) => {
   return filteredSessions.value.filter((session) => sessionIds.has(session.id))
 }
 
+const sessionItemHeight = computed(() =>
+  isTerminalAppearance.value ? TERMINAL_SESSION_ITEM_HEIGHT : MODERN_SESSION_ITEM_HEIGHT
+)
+
 const getSessionItemsStyle = (count: number) => ({
-  height: `${count * SESSION_ITEM_HEIGHT}px`
+  height: `${count * sessionItemHeight.value}px`
+})
+
+const updateAppearanceMode = () => {
+  isTerminalAppearance.value = document.documentElement.classList.contains(
+    'app-appearance-terminal'
+  )
+}
+
+let appearanceObserver: MutationObserver | null = null
+
+onMounted(() => {
+  updateAppearanceMode()
+  appearanceObserver = new MutationObserver(updateAppearanceMode)
+  appearanceObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['class']
+  })
+})
+
+onUnmounted(() => {
+  appearanceObserver?.disconnect()
+  appearanceObserver = null
 })
 
 const handleSessionClick = (session: SessionConfig) => {
@@ -1069,6 +1099,103 @@ const handleSessionDropToGroup = async (sessionId: string, groupId: string) => {
     width: 22px;
     height: 22px;
   }
+}
+
+:global(:root.app-appearance-terminal .session-list-header) {
+  padding: 8px;
+  background: var(--bg-secondary);
+}
+
+:global(:root.app-appearance-terminal .header-title) {
+  font-size: var(--text-base);
+  letter-spacing: 0;
+  font-family: var(--font-mono);
+}
+
+:global(:root.app-appearance-terminal .session-groups-container) {
+  padding: 3px;
+}
+
+:global(:root.app-appearance-terminal .group-item) {
+  margin: 3px 4px;
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+}
+
+:global(:root.app-appearance-terminal .group-item:hover) {
+  box-shadow: none;
+}
+
+:global(:root.app-appearance-terminal .session-groups-container .el-collapse-item__header) {
+  height: 32px;
+  line-height: 32px;
+  padding: 0 6px;
+  font-size: var(--text-sm);
+}
+
+:global(:root.app-appearance-terminal .group-header .el-tag) {
+  min-width: 26px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--radius-xs);
+  background: rgba(var(--primary-color-rgb), 0.11);
+  border-color: rgba(var(--primary-color-rgb), 0.28);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+:global(:root.light-theme.app-appearance-terminal .group-header .el-tag) {
+  background: rgba(var(--primary-color-rgb), 0.1);
+  border-color: rgba(var(--primary-color-rgb), 0.22);
+  color: var(--primary-color);
+}
+
+:global(:root.app-appearance-terminal .session-groups-container .el-collapse-item__content),
+:global(:root.app-appearance-terminal .session-items) {
+  padding: 2px 3px;
+}
+
+:global(:root.app-appearance-terminal .session-card) {
+  min-height: 34px;
+  padding: 4px 6px;
+  margin: 2px 3px;
+  width: calc(100% - 6px);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border-color: transparent;
+}
+
+:global(:root.app-appearance-terminal .session-card:hover) {
+  transform: none;
+  box-shadow: none;
+  background: var(--bg-tertiary);
+  border-color: var(--border-medium);
+}
+
+:global(:root.app-appearance-terminal .session-card:active) {
+  transform: none;
+}
+
+:global(:root.app-appearance-terminal .session-icon) {
+  width: 20px;
+  height: 20px;
+  background: var(--bg-main);
+}
+
+:global(:root.app-appearance-terminal .session-card:hover .session-icon) {
+  background: var(--bg-elevated);
+  color: var(--primary-color);
+  transform: none;
+}
+
+:global(:root.app-appearance-terminal .session-name) {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+:global(:root.app-appearance-terminal .session-details) {
+  font-family: var(--font-mono);
 }
 
 .session-card {

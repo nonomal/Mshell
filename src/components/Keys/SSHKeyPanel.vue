@@ -531,4 +531,16 @@ const formatDate = (date: string) => {
   gap: 4px;
   white-space: nowrap;
 }
+
+:global(:root.app-appearance-terminal .ssh-key-panel) {
+  background: var(--bg-main);
+}
+
+:global(:root.app-appearance-terminal .panel-content) {
+  padding: 12px;
+}
+
+:global(:root.app-appearance-terminal .action-buttons) {
+  gap: 3px;
+}
 </style>

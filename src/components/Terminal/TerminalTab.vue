@@ -694,6 +694,16 @@ const fontOptions = [
 const currentFont = computed(
   () => props.terminalOptions?.fontFamily || "'JetBrains Mono', monospace"
 )
+
+const getActiveAppShellGeneralSettings = (savedSettings: any) => {
+  const root = document.documentElement
+  const appearance = root.classList.contains('app-appearance-terminal') ? 'terminal' : 'modern'
+
+  return {
+    ...(savedSettings?.general || {}),
+    appearance
+  }
+}
 const appStore = useAppStore()
 const isActiveTab = computed(() => appStore.activeTab === props.connectionId)
 
@@ -1340,9 +1350,13 @@ const handleFontChange = async (fontFamily: string) => {
     const appStore = useAppStore()
     appStore.updateTerminalOptions({ fontFamily })
 
+    const currentSettings = await window.electronAPI.settings.get()
+
     // 保存到设置中
     await window.electronAPI.settings.update({
+      general: getActiveAppShellGeneralSettings(currentSettings),
       terminal: {
+        ...(currentSettings?.terminal || {}),
         fontFamily: fontFamily
       }
     })
@@ -1361,9 +1375,13 @@ const handleThemeChange = async (themeName: string) => {
     const appStore = useAppStore()
     appStore.updateTerminalOptions({ theme: themeName })
 
+    const currentSettings = await window.electronAPI.settings.get()
+
     // 保存到设置中
     await window.electronAPI.settings.update({
+      general: getActiveAppShellGeneralSettings(currentSettings),
       terminal: {
+        ...(currentSettings?.terminal || {}),
         theme: themeName
       }
     })
@@ -2246,12 +2264,14 @@ defineExpose({
 
 /* Snippet Sidebar - 左右布局样式 */
 .snippet-sidebar {
-  width: 480px;
+  width: clamp(560px, 38vw, 720px);
+  max-width: calc(100% - 360px);
   background: var(--bg-secondary);
   border-left: 1px solid var(--border-color);
-  flex-shrink: 0;
+  flex: 0 0 clamp(560px, 38vw, 720px);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .sidebar-header {
@@ -2280,7 +2300,7 @@ defineExpose({
 
 /* 左侧分类区域 */
 .snippet-categories {
-  width: 140px;
+  width: 152px;
   min-height: 0;
   flex-shrink: 0;
   border-right: 1px solid var(--border-color);
@@ -2345,6 +2365,7 @@ defineExpose({
 /* 右侧主区域 */
 .snippet-main {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2574,5 +2595,126 @@ defineExpose({
 .slide-down-leave-to {
   transform: translateY(-100%);
   opacity: 0;
+}
+
+@media (max-width: 1180px) {
+  .snippet-sidebar {
+    width: min(560px, 48vw);
+    max-width: 58vw;
+    flex-basis: min(560px, 48vw);
+  }
+
+  .snippet-categories {
+    width: 136px;
+  }
+}
+
+@media (max-width: 860px) {
+  .snippet-sidebar {
+    width: min(100%, 520px);
+    max-width: 100%;
+    flex-basis: min(100%, 520px);
+  }
+}
+
+:global(:root.app-appearance-terminal .terminal-header) {
+  height: 30px;
+  padding: 0 8px;
+  gap: 7px;
+  background: var(--bg-secondary);
+}
+
+:global(:root.app-appearance-terminal .glass-header) {
+  backdrop-filter: none;
+}
+
+:global(:root.app-appearance-terminal .status-dot) {
+  width: 6px;
+  height: 6px;
+  box-shadow: none;
+}
+
+:global(:root.app-appearance-terminal .snippet-sidebar) {
+  width: clamp(560px, 38vw, 720px);
+  max-width: calc(100% - 360px);
+  flex: 0 0 clamp(560px, 38vw, 720px);
+  background: var(--bg-secondary);
+}
+
+:global(:root.app-appearance-terminal .sidebar-header) {
+  padding: 7px 9px;
+  background: var(--bg-tertiary);
+}
+
+:global(:root.app-appearance-terminal .sidebar-header h3) {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+:global(:root.app-appearance-terminal .snippet-categories) {
+  width: 148px;
+}
+
+:global(:root.app-appearance-terminal .category-section) {
+  padding: 6px 0;
+}
+
+:global(:root.app-appearance-terminal .section-title),
+:global(:root.app-appearance-terminal .category-item),
+:global(:root.app-appearance-terminal .snippet-name),
+:global(:root.app-appearance-terminal .snippet-command) {
+  font-family: var(--font-mono);
+}
+
+:global(:root.app-appearance-terminal .category-item) {
+  padding: 4px 8px;
+}
+
+:global(:root.app-appearance-terminal .category-item.active) {
+  background: var(--bg-tertiary);
+  box-shadow: inset 2px 0 0 var(--primary-color);
+}
+
+:global(:root.app-appearance-terminal .snippet-search) {
+  padding: 6px 8px;
+}
+
+:global(:root.app-appearance-terminal .snippet-list) {
+  padding: 6px;
+}
+
+:global(:root.app-appearance-terminal .snippet-item) {
+  padding: 6px;
+  margin-bottom: 4px;
+  border-radius: var(--radius-sm);
+}
+
+:global(:root.app-appearance-terminal .snippet-item:hover) {
+  box-shadow: none;
+}
+
+:global(:root.app-appearance-terminal .snippet-command) {
+  border-radius: var(--radius-xs);
+  background: var(--bg-main);
+}
+
+@media (max-width: 1180px) {
+  :global(:root.app-appearance-terminal .snippet-sidebar) {
+    width: min(560px, 48vw);
+    max-width: 58vw;
+    flex-basis: min(560px, 48vw);
+  }
+
+  :global(:root.app-appearance-terminal .snippet-categories) {
+    width: 136px;
+  }
+}
+
+@media (max-width: 860px) {
+  :global(:root.app-appearance-terminal .snippet-sidebar) {
+    width: min(100%, 520px);
+    max-width: 100%;
+    flex-basis: min(100%, 520px);
+  }
 }
 </style>

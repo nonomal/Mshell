@@ -5,6 +5,7 @@ export interface AppSettings {
   general: {
     language: 'zh-CN' | 'en-US'
     theme: 'light' | 'dark' | 'auto'
+    appearance: 'modern' | 'terminal'
     startWithSystem: boolean
     minimizeToTray: boolean
     closeToTray: boolean
@@ -36,6 +37,7 @@ export const useSettingsStore = defineStore('settings', () => {
     general: {
       language: 'zh-CN',
       theme: 'auto',
+      appearance: 'modern',
       startWithSystem: false,
       minimizeToTray: false,
       closeToTray: false

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { SessionConfig, SessionGroup } from '@/types/session'
 import { terminalShortcutsManager } from '@/utils/terminal-shortcuts'
+import { applyAppShellTheme, type AppColorTheme } from '@/utils/app-appearance'
 
 export type ActiveView =
   | 'sessions'
@@ -251,8 +252,8 @@ export const useAppStore = defineStore('app', () => {
 
   function applySettings(settings: any) {
     // 应用主题
-    if (settings.general?.theme) {
-      applyTheme(settings.general.theme)
+    if (settings.general) {
+      applyTheme(settings.general.theme || 'dark', settings.general.appearance)
     }
 
     // 应用终端设置
@@ -274,28 +275,13 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  function applyTheme(theme: 'light' | 'dark' | 'auto') {
-    const root = document.documentElement
-    let isDark = true
-
-    if (theme === 'auto') {
-      isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    } else {
-      isDark = theme === 'dark'
-    }
-
-    if (isDark) {
-      root.classList.remove('light-theme')
-      root.classList.add('dark')
-    } else {
-      root.classList.remove('dark')
-      root.classList.add('light-theme')
-    }
+  function applyTheme(theme: AppColorTheme, appearance?: string) {
+    const { resolvedTheme } = applyAppShellTheme({ theme, appearance })
 
     // 自动切换终端主题
     const currentTerminalTheme = terminalOptions.value.theme
     if (currentTerminalTheme === 'dark' || currentTerminalTheme === 'light') {
-      terminalOptions.value.theme = isDark ? 'dark' : 'light'
+      terminalOptions.value.theme = resolvedTheme
     }
   }
 

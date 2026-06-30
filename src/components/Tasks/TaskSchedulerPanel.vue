@@ -887,4 +887,32 @@ const describeCron = (cron: string): string => {
   color: var(--text-secondary);
   font-size: var(--text-md);
 }
+
+:global(:root.app-appearance-terminal .task-scheduler-panel) {
+  background: var(--bg-main);
+}
+
+:global(:root.app-appearance-terminal .stats-bar) {
+  gap: 18px;
+  padding: 10px 12px;
+}
+
+:global(:root.app-appearance-terminal .stat-value) {
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+}
+
+:global(:root.app-appearance-terminal .stat-label) {
+  font-size: var(--text-xs);
+}
+
+:global(:root.app-appearance-terminal .panel-content) {
+  padding: 12px;
+}
+
+:global(:root.app-appearance-terminal .cron-explain),
+:global(:root.app-appearance-terminal .examples) {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
 </style>

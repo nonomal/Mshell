@@ -1302,6 +1302,22 @@ const resolveInitialLocalPath = async () => {
   return 'C:\\'
 }
 
+const setLocalDirectory = async (path: string, silent = false) => {
+  localPath.value = path
+  localPathInput.value = path
+
+  if (path.match(/^[A-Z]:/i)) {
+    currentDrive.value = path.substring(0, 2).toUpperCase()
+  }
+
+  await loadLocalDirectory(silent)
+}
+
+const applyDefaultLocalPath = async (silent = false) => {
+  const targetPath = await resolveInitialLocalPath()
+  await setLocalDirectory(targetPath, silent)
+}
+
 const normalizeRemotePath = (path: string) => {
   const trimmed = path.trim()
   if (!trimmed) return '/'
@@ -1350,17 +1366,9 @@ const computedOctalPermission = computed(() => {
 onMounted(async () => {
   try {
     await loadSftpSettings()
-    const initialLocalPath = await resolveInitialLocalPath()
-    localPath.value = initialLocalPath
-    localPathInput.value = initialLocalPath
-
-    // 检测当前盘符
-    if (initialLocalPath.match(/^[A-Z]:/i)) {
-      currentDrive.value = initialLocalPath.substring(0, 2).toUpperCase()
-    }
+    await applyDefaultLocalPath(true)
 
     await loadSessions()
-    await loadLocalDirectory()
     await loadIncompleteTransfers()
     loadTransferHistory()
   } catch (error) {
@@ -1415,7 +1423,14 @@ onMounted(async () => {
   sftpListenerCleanups.push(() => window.clearInterval(transferWatchdog))
 
   const unsubSettings = window.electronAPI.settings.onChange((settings: any) => {
+    const previousDefaultPath = sftpSettings.value.defaultLocalPath
     applySftpSettings(settings)
+
+    if (sftpSettings.value.defaultLocalPath !== previousDefaultPath) {
+      applyDefaultLocalPath(true).catch((error) => {
+        console.error('[SFTPPanel] Failed to apply default local path:', error)
+      })
+    }
   })
   if (unsubSettings) {
     sftpListenerCleanups.push(unsubSettings)
@@ -3879,6 +3894,107 @@ const extractRemoteFileTo = async (file: FileInfo) => {
 
 :deep(.transfer-queue-dialog .el-dialog__body) {
   padding: 0;
+}
+
+:global(:root.app-appearance-terminal .sftp-panel) {
+  background: var(--bg-main);
+}
+
+:global(:root.app-appearance-terminal .dual-panel) {
+  grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px;
+}
+
+:global(:root.app-appearance-terminal .file-browser) {
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+}
+
+:global(:root.app-appearance-terminal .browser-header) {
+  gap: 7px;
+  padding: 8px;
+  background: var(--bg-secondary);
+}
+
+:global(:root.app-appearance-terminal .browser-header h3) {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+:global(:root.app-appearance-terminal .connected-session) {
+  min-height: 28px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-main);
+  border-color: var(--border-medium);
+}
+
+:global(:root.app-appearance-terminal .toolbar),
+:global(:root.app-appearance-terminal .path-controls),
+:global(:root.app-appearance-terminal .path-bar) {
+  gap: 5px;
+}
+
+:global(:root.app-appearance-terminal .transfer-controls) {
+  gap: 8px;
+}
+
+:global(:root.app-appearance-terminal .transfer-controls::before),
+:global(:root.app-appearance-terminal .transfer-controls::after) {
+  background: var(--border-color);
+}
+
+:global(:root.app-appearance-terminal .transfer-btn) {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+}
+
+:global(:root.app-appearance-terminal .transfer-btn:hover:not(:disabled)) {
+  transform: none;
+  box-shadow: none;
+}
+
+:global(:root.app-appearance-terminal .file-list .table-header-cell) {
+  padding: 7px 10px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+:global(:root.app-appearance-terminal .file-list .table-body) {
+  padding: 0;
+}
+
+:global(:root.app-appearance-terminal .file-list .table-row) {
+  min-height: 32px;
+}
+
+:global(:root.app-appearance-terminal .file-list .table-row:hover),
+:global(:root.app-appearance-terminal .file-list .table-row.hover) {
+  background: var(--bg-tertiary);
+}
+
+:global(:root.app-appearance-terminal .file-list .table-row.selected) {
+  background: var(--bg-elevated) !important;
+  box-shadow: inset 2px 0 0 var(--primary-color);
+}
+
+:global(:root.app-appearance-terminal .file-list .table-cell) {
+  padding: 0 10px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+:global(:root.app-appearance-terminal .file-name-cell) {
+  gap: 7px;
+}
+
+:global(:root.app-appearance-terminal .queue-entry-button) {
+  border-radius: var(--radius-sm);
+  box-shadow: none;
 }
 
 /* Transfer Queue */

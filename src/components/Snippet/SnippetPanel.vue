@@ -1073,4 +1073,83 @@ const resetForm = () => {
 .snippet-item:nth-child(3) { animation-delay: 0.15s; }
 .snippet-item:nth-child(4) { animation-delay: 0.2s; }
 .snippet-item:nth-child(5) { animation-delay: 0.25s; }
+
+:global(:root.app-appearance-terminal .snippet-sidebar) {
+  width: 292px;
+  box-shadow: none;
+}
+
+:global(:root.app-appearance-terminal .sidebar-header) {
+  padding: 9px 10px;
+  background: var(--bg-secondary);
+}
+
+:global(:root.app-appearance-terminal .sidebar-header h3) {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+}
+
+:global(:root.app-appearance-terminal .sidebar-search) {
+  padding: 8px;
+}
+
+:global(:root.app-appearance-terminal .category-header) {
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+}
+
+:global(:root.app-appearance-terminal .category-count),
+:global(:root.app-appearance-terminal .usage-badge),
+:global(:root.app-appearance-terminal .shortcut-tag) {
+  border-radius: var(--radius-xs);
+}
+
+:global(:root.app-appearance-terminal .snippet-item) {
+  margin: 2px 6px 2px 18px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  animation: none;
+}
+
+:global(:root.app-appearance-terminal .snippet-item:hover) {
+  transform: none;
+  background: var(--bg-tertiary);
+}
+
+:global(:root.app-appearance-terminal .snippet-item.active) {
+  box-shadow: inset 2px 0 0 var(--primary-color);
+  background: var(--bg-elevated);
+}
+
+:global(:root.app-appearance-terminal .snippet-name),
+:global(:root.app-appearance-terminal .detail-title h2),
+:global(:root.app-appearance-terminal .detail-section h4) {
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+}
+
+:global(:root.app-appearance-terminal .detail-content) {
+  padding: 18px;
+}
+
+:global(:root.app-appearance-terminal .detail-header) {
+  margin-bottom: 18px;
+  padding-bottom: 12px;
+}
+
+:global(:root.app-appearance-terminal .detail-title h2) {
+  font-size: var(--text-xl);
+}
+
+:global(:root.app-appearance-terminal .detail-section) {
+  margin-bottom: 18px;
+}
+
+:global(:root.app-appearance-terminal .command-block),
+:global(:root.app-appearance-terminal .command-preview),
+:global(:root.app-appearance-terminal .variables-form),
+:global(:root.app-appearance-terminal .final-command) {
+  padding: 10px;
+}
 </style>

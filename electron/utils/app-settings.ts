@@ -23,6 +23,7 @@ export interface AppSettings {
   general: {
     language: 'zh-CN' | 'en-US'
     theme: 'light' | 'dark' | 'auto'
+    appearance: 'modern' | 'terminal'
     startWithSystem: boolean
     minimizeToTray: boolean
     closeToTray: boolean
@@ -87,6 +88,7 @@ class AppSettingsManager {
       general: {
         language: 'zh-CN',
         theme: 'dark',
+        appearance: 'modern',
         startWithSystem: false,
         minimizeToTray: false,
         closeToTray: false
@@ -103,7 +105,7 @@ class AppSettingsManager {
       },
       sftp: {
         maxConcurrentTransfers: 3,
-        defaultLocalPath: app.getPath('downloads'),
+        defaultLocalPath: this.getSystemDownloadsPath(),
         confirmBeforeDelete: true,
         showHiddenFiles: false
       },
@@ -132,6 +134,28 @@ class AppSettingsManager {
     }
   }
 
+  private getSystemDownloadsPath(): string {
+    return app.getPath('downloads')
+  }
+
+  private isExistingDirectory(value?: string | null): value is string {
+    if (!value || typeof value !== 'string') return false
+
+    try {
+      return fs.existsSync(value) && fs.statSync(value).isDirectory()
+    } catch {
+      return false
+    }
+  }
+
+  private normalizeDefaultLocalPath(value?: string | null): string {
+    if (this.isExistingDirectory(value)) {
+      return value
+    }
+
+    return this.getSystemDownloadsPath()
+  }
+
   private load(): void {
     try {
       if (fs.existsSync(this.settingsFile)) {
@@ -149,6 +173,9 @@ class AppSettingsManager {
           shortcuts: loaded.shortcuts ?? this.settings.shortcuts,
           terminalShortcuts: loaded.terminalShortcuts ?? this.settings.terminalShortcuts
         }
+        this.settings.sftp.defaultLocalPath = this.normalizeDefaultLocalPath(
+          this.settings.sftp.defaultLocalPath
+        )
       }
     } catch (error) {
       console.error('Failed to load settings:', error)
@@ -184,6 +211,9 @@ class AppSettingsManager {
           ? updates.terminalShortcuts
           : this.settings.terminalShortcuts
     }
+    this.settings.sftp.defaultLocalPath = this.normalizeDefaultLocalPath(
+      this.settings.sftp.defaultLocalPath
+    )
     await this.save()
   }
 

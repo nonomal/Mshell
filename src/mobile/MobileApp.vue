@@ -1,9 +1,9 @@
 <template>
-  <div class="mobile-shell">
+  <div class="mobile-shell" :class="{ 'is-locked': isLocked && securitySettings.enabled }">
     <LockScreen
       v-if="isLocked && securitySettings.enabled"
       :settings="securitySettings"
-    @unlocked="unlockApp"
+      @unlocked="unlockApp"
     />
 
     <header class="app-header">
@@ -169,14 +169,34 @@
         <div class="section-head">
           <div>
             <h2>设置</h2>
-            <p>管理远程同步、备份导入导出、安全锁和终端输入模式</p>
+            <p>{{ activeSettingsTabDescription }}</p>
           </div>
         </div>
-        <RemoteSyncPanel @synced="refreshState" />
-        <ImportPanel @imported="refreshState" />
-        <ExportPanel />
-        <AppSettingsPanel :settings="appSettings" @updated="appSettings = $event" />
-        <SecurityPanel :settings="securitySettings" @lock-now="lockApp" />
+        <nav class="settings-tabs" aria-label="设置分类">
+          <button
+            v-for="tab in settingsTabs"
+            :key="tab.id"
+            type="button"
+            :class="{ active: activeSettingsTab === tab.id }"
+            @click="activeSettingsTab = tab.id"
+          >
+            <span>{{ tab.icon }}</span>
+            {{ tab.label }}
+          </button>
+        </nav>
+        <RemoteSyncPanel v-if="activeSettingsTab === 'sync'" @synced="refreshState" />
+        <ImportPanel v-else-if="activeSettingsTab === 'import'" @imported="refreshState" />
+        <ExportPanel v-else-if="activeSettingsTab === 'export'" />
+        <AppSettingsPanel
+          v-else-if="activeSettingsTab === 'terminal'"
+          :settings="appSettings"
+          @updated="appSettings = $event"
+        />
+        <SecurityPanel
+          v-else
+          :settings="securitySettings"
+          @lock-now="lockApp"
+        />
       </section>
     </main>
 
@@ -241,15 +261,16 @@
         </div>
       </header>
 
-      <pre
-        class="terminal-output"
-        :class="{ interactive: visibleTerminal.inputMode === 'direct-terminal' }"
-        :contenteditable="visibleTerminal.inputMode === 'direct-terminal' ? 'plaintext-only' : 'false'"
-        spellcheck="false"
+      <div
+        v-if="visibleTerminal.inputMode === 'direct-terminal'"
+        ref="terminalOutputRef"
+        class="terminal-output terminal-xterm interactive"
         tabindex="0"
-        @beforeinput="handleTerminalBeforeInput($event, visibleTerminal)"
-        @keydown="handleTerminalKeydown($event, visibleTerminal)"
-        @paste="handleTerminalPaste($event, visibleTerminal)"
+        @click="focusVisibleTerminal"
+      />
+      <pre
+        v-else
+        class="terminal-output"
       >{{ visibleTerminal.output || '正在打开连接...' }}</pre>
 
       <div class="terminal-tools">
@@ -650,7 +671,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { Terminal as XTerm } from 'xterm'
+import { FitAddon } from 'xterm-addon-fit'
+import { App as CapacitorApp } from '@capacitor/app'
 import type { SessionConfig, SessionGroup } from '@/types/session'
 import type { MobileSnippet, MobileSSHKey, MobileStoreState } from './types'
 import { createMobileId, mobileStore } from './services/mobile-store'
@@ -669,14 +693,17 @@ import {
   type MobileAppSettings,
   type TerminalInputMode
 } from './services/app-settings'
+import { stripTerminalControlSequences } from './services/terminal-output'
 import ImportPanel from './components/ImportPanel.vue'
 import ExportPanel from './components/ExportPanel.vue'
 import RemoteSyncPanel from './components/RemoteSyncPanel.vue'
 import AppSettingsPanel from './components/AppSettingsPanel.vue'
 import LockScreen from './components/LockScreen.vue'
 import SecurityPanel from './components/SecurityPanel.vue'
+import 'xterm/css/xterm.css'
 
 type TabId = 'sessions' | 'snippets' | 'keys' | 'sync'
+type SettingsTabId = 'sync' | 'import' | 'export' | 'terminal' | 'security'
 type CategoryDrawer = 'sessions' | 'snippets'
 type TerminalStatus = 'idle' | 'connecting' | 'connected' | 'error'
 interface TerminalWindow {
@@ -694,6 +721,12 @@ interface TerminalWindow {
   minimized: boolean
 }
 
+interface TerminalRuntime {
+  terminal: XTerm
+  fitAddon: FitAddon
+  disposables: Array<{ dispose: () => void }>
+}
+
 type EditorState =
   | { type: 'session'; mode: 'create' | 'edit'; id?: string }
   | { type: 'snippet'; mode: 'create' | 'edit'; id?: string }
@@ -707,7 +740,21 @@ const tabs: Array<{ id: TabId; label: string; icon: string }> = [
   { id: 'sync', label: '设置', icon: '⚙' }
 ]
 
+const settingsTabs: Array<{
+  id: SettingsTabId
+  label: string
+  icon: string
+  description: string
+}> = [
+  { id: 'sync', label: '同步', icon: '⇄', description: '管理远程同步和云端配置' },
+  { id: 'import', label: '导入', icon: '⇪', description: '导入桌面端备份或同步数据' },
+  { id: 'export', label: '导出', icon: '⇩', description: '导出当前手机端数据备份' },
+  { id: 'terminal', label: '终端', icon: '⌁', description: '设置终端输入模式' },
+  { id: 'security', label: '安全', icon: '锁', description: '管理 PIN、系统验证和前台重新锁定' }
+]
+
 const activeTab = ref<TabId>('sessions')
+const activeSettingsTab = ref<SettingsTabId>('sync')
 const showImport = ref(false)
 const state = ref<MobileStoreState>(mobileStore.load())
 const securitySettings = ref<SecuritySettings>(securityStore.load())
@@ -725,6 +772,8 @@ const categoryDrawer = ref<CategoryDrawer | null>(null)
 const editor = ref<EditorState | null>(null)
 const lastSessionTap = ref<{ id: string; at: number }>({ id: '', at: 0 })
 const sessionActionMenu = ref<SessionConfig | null>(null)
+const terminalOutputRef = ref<HTMLElement | null>(null)
+const terminalRuntimes = new Map<string, TerminalRuntime>()
 
 const sessionForm = reactive({
   id: '',
@@ -776,10 +825,30 @@ const keyForm = reactive({
   createdAt: ''
 })
 let removeShellDataListener: (() => Promise<void>) | undefined
+let removeBackButtonListener: (() => Promise<void>) | undefined
 
 const activeTitle = computed(
   () => tabs.find((tab) => tab.id === activeTab.value)?.label || 'MShell'
 )
+const activeSettingsTabDescription = computed(
+  () => settingsTabs.find((tab) => tab.id === activeSettingsTab.value)?.description || '管理设置'
+)
+
+const closeTransientUi = () => {
+  showImport.value = false
+  showTerminalSwitcher.value = false
+  categoryDrawer.value = null
+  editor.value = null
+  sessionActionMenu.value = null
+}
+
+const requireUnlock = () => {
+  if (!securityStore.isLockRequired()) return false
+  closeTransientUi()
+  isLocked.value = true
+  return true
+}
+
 const editorTitle = computed(() => {
   if (!editor.value) return ''
   const action = editor.value.mode === 'create' ? '新增' : '编辑'
@@ -880,6 +949,14 @@ const terminalSnippets = computed(() => {
     .slice(0, 20)
 })
 
+watch(
+  () => `${visibleTerminal.value?.id || ''}:${visibleTerminal.value?.inputMode || ''}`,
+  () => {
+    void syncVisibleTerminalRuntime()
+  },
+  { flush: 'post' }
+)
+
 const billingCycleLabels: Record<NonNullable<SessionConfig['billingCycle']>, string> = {
   monthly: '月付',
   quarterly: '季付',
@@ -923,12 +1000,19 @@ onMounted(() => {
   onSshShellData((event) => {
     const terminal = terminalWindows.value.find((item) => item.sessionId === event.sessionId)
     if (terminal) {
-      terminal.output += event.data
+      appendShellDataToTerminal(terminal, event.data)
     }
   }).then((listener) => {
     removeShellDataListener = listener.remove
   }).catch((error) => {
     console.warn('[MobileApp] Failed to register shell output listener', error)
+  })
+  CapacitorApp.addListener('backButton', () => {
+    void handleAndroidBackButton()
+  }).then((listener) => {
+    removeBackButtonListener = listener.remove
+  }).catch((error) => {
+    console.warn('[MobileApp] Failed to register Android back button listener', error)
   })
   document.addEventListener('visibilitychange', handleVisibilityChange)
 })
@@ -936,16 +1020,72 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   removeShellDataListener?.()
+  removeBackButtonListener?.()
+  disposeAllTerminalRuntimes()
 })
 
 const handleVisibilityChange = () => {
   if (
-    document.visibilityState === 'visible' &&
+    (document.visibilityState === 'hidden' || document.visibilityState === 'visible') &&
     securityStore.isLockRequired() &&
     securitySettings.value.lockOnResume
   ) {
-    isLocked.value = true
+    requireUnlock()
   }
+}
+
+const handleAndroidBackButton = async () => {
+  if (isLocked.value && securitySettings.value.enabled) {
+    await CapacitorApp.exitApp()
+    return
+  }
+
+  if (showTerminalSwitcher.value) {
+    showTerminalSwitcher.value = false
+    return
+  }
+  if (showImport.value) {
+    showImport.value = false
+    return
+  }
+  if (sessionActionMenu.value) {
+    closeSessionActions()
+    return
+  }
+  if (categoryDrawer.value) {
+    categoryDrawer.value = null
+    return
+  }
+  if (editor.value) {
+    closeEditor()
+    return
+  }
+
+  const terminal = visibleTerminal.value
+  if (terminal?.snippetPanel) {
+    terminal.snippetPanel = false
+    return
+  }
+  if (terminal) {
+    minimizeTerminal(terminal.id)
+    return
+  }
+
+  if (activeTab.value === 'sync' && activeSettingsTab.value !== 'sync') {
+    activeSettingsTab.value = 'sync'
+    return
+  }
+  if (activeTab.value !== 'sessions') {
+    switchTab('sessions')
+    return
+  }
+  if (selectedGroupId.value !== 'all') {
+    selectedGroupId.value = 'all'
+    selectedSessionId.value = filteredSessions.value[0]?.id || ''
+    return
+  }
+
+  await CapacitorApp.exitApp()
 }
 
 const unlockApp = () => {
@@ -953,10 +1093,9 @@ const unlockApp = () => {
 }
 
 const lockApp = () => {
-  if (securityStore.isLockRequired()) {
-    isLocked.value = true
-  } else {
+  if (!requireUnlock()) {
     activeTab.value = 'sync'
+    activeSettingsTab.value = 'security'
   }
 }
 
@@ -1109,13 +1248,23 @@ const openTerminal = async (session: SessionConfig) => {
     currentTerminal.status = 'connected'
     currentTerminal.sessionId = result.sessionId
     if (currentTerminal.inputMode === 'direct-terminal') {
-      const shell = await openSshShell(result.sessionId, { cols: 80, rows: 24 })
+      const runtime = await prepareVisibleTerminalRuntime(currentTerminal)
+      const shell = await openSshShell(result.sessionId, {
+        cols: runtime.terminal.cols || 80,
+        rows: runtime.terminal.rows || 24
+      })
       if (!shell.success) {
-        currentTerminal.output += `${shell.error || 'Shell 通道打开失败，已切回命令框模式'}\n`
+        appendLocalTerminalOutput(
+          currentTerminal,
+          `${shell.error || 'Shell 通道打开失败，已切回命令框模式'}\n`
+        )
         currentTerminal.inputMode = 'command-box'
+        disposeTerminalRuntime(currentTerminal.id)
       } else {
         currentTerminal.shellOpen = true
-        currentTerminal.output += `已连接。点击终端区域后可直接输入。\n`
+        appendLocalTerminalOutput(currentTerminal, `已连接。点击终端区域后可直接输入。\n`)
+        await syncVisibleTerminalRuntime()
+        focusVisibleTerminal()
       }
     } else {
       currentTerminal.output += `已连接。输入命令后点击执行，支持多行。\n`
@@ -1139,6 +1288,152 @@ const getTerminalStatusText = (terminal: TerminalWindow) => {
   if (terminal.status === 'connected') return '已连接'
   if (terminal.status === 'error') return '连接失败'
   return '未连接'
+}
+
+const createTerminalRuntime = (terminalWindow: TerminalWindow): TerminalRuntime => {
+  const terminal = new XTerm({
+    cols: 80,
+    rows: 24,
+    cursorBlink: true,
+    convertEol: true,
+    disableStdin: true,
+    fontFamily: "'Cascadia Mono', 'SFMono-Regular', Consolas, monospace",
+    fontSize: 12,
+    lineHeight: 1.35,
+    scrollback: 5000,
+    theme: {
+      background: '#050812',
+      foreground: '#d1fae5',
+      cursor: '#bbf7d0',
+      selectionBackground: '#2563eb66',
+      black: '#020617',
+      red: '#f87171',
+      green: '#34d399',
+      yellow: '#fbbf24',
+      blue: '#60a5fa',
+      magenta: '#c084fc',
+      cyan: '#22d3ee',
+      white: '#e5e7eb',
+      brightBlack: '#64748b',
+      brightRed: '#fca5a5',
+      brightGreen: '#86efac',
+      brightYellow: '#fde68a',
+      brightBlue: '#93c5fd',
+      brightMagenta: '#d8b4fe',
+      brightCyan: '#67e8f9',
+      brightWhite: '#ffffff'
+    }
+  })
+  const fitAddon = new FitAddon()
+  terminal.loadAddon(fitAddon)
+
+  const runtime: TerminalRuntime = {
+    terminal,
+    fitAddon,
+    disposables: [
+      terminal.onData((data) => {
+        const currentTerminal = findTerminal(terminalWindow.id)
+        if (
+          !currentTerminal ||
+          currentTerminal.inputMode !== 'direct-terminal' ||
+          currentTerminal.status !== 'connected' ||
+          !currentTerminal.shellOpen ||
+          !currentTerminal.sessionId
+        ) {
+          return
+        }
+        void writeSshShell(currentTerminal.sessionId, data)
+      })
+    ]
+  }
+
+  terminalRuntimes.set(terminalWindow.id, runtime)
+  if (terminalWindow.output) {
+    terminal.write(formatLocalTerminalOutput(terminalWindow.output))
+  }
+  return runtime
+}
+
+const ensureTerminalRuntime = (terminal: TerminalWindow): TerminalRuntime =>
+  terminalRuntimes.get(terminal.id) || createTerminalRuntime(terminal)
+
+const attachTerminalRuntime = (runtime: TerminalRuntime, host: HTMLElement) => {
+  if (!runtime.terminal.element) {
+    runtime.terminal.open(host)
+  } else if (!host.contains(runtime.terminal.element)) {
+    host.replaceChildren(runtime.terminal.element)
+  }
+  fitTerminalRuntime(runtime)
+}
+
+const fitTerminalRuntime = (runtime: TerminalRuntime) => {
+  window.requestAnimationFrame(() => {
+    try {
+      runtime.fitAddon.fit()
+    } catch (error) {
+      console.warn('[MobileApp] Failed to fit mobile terminal', error)
+    }
+  })
+}
+
+const syncVisibleTerminalRuntime = async () => {
+  await nextTick()
+  const terminal = visibleTerminal.value
+  const host = terminalOutputRef.value
+  if (!terminal || terminal.inputMode !== 'direct-terminal' || !host) return
+
+  const runtime = ensureTerminalRuntime(terminal)
+  attachTerminalRuntime(runtime, host)
+  runtime.terminal.options.disableStdin =
+    terminal.status !== 'connected' || !terminal.shellOpen || !terminal.sessionId
+}
+
+const prepareVisibleTerminalRuntime = async (terminal: TerminalWindow): Promise<TerminalRuntime> => {
+  const runtime = ensureTerminalRuntime(terminal)
+  await syncVisibleTerminalRuntime()
+  return runtime
+}
+
+const focusVisibleTerminal = () => {
+  const terminal = visibleTerminal.value
+  if (!terminal) return
+  terminalRuntimes.get(terminal.id)?.terminal.focus()
+}
+
+const formatLocalTerminalOutput = (value: string): string =>
+  value.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n/g, '\r\n')
+
+const appendLocalTerminalOutput = (terminal: TerminalWindow, value: string) => {
+  terminal.output += value
+  if (terminal.inputMode === 'direct-terminal') {
+    ensureTerminalRuntime(terminal).terminal.write(formatLocalTerminalOutput(value))
+  }
+}
+
+const appendShellDataToTerminal = (terminal: TerminalWindow, data: string) => {
+  if (terminal.inputMode === 'direct-terminal') {
+    ensureTerminalRuntime(terminal).terminal.write(data)
+    return
+  }
+  terminal.output += stripTerminalControlSequences(data)
+}
+
+const appendCommandResultOutput = (terminal: TerminalWindow, output: string) => {
+  const normalizedOutput = stripTerminalControlSequences(output)
+  if (!normalizedOutput) return
+  terminal.output += normalizedOutput.endsWith('\n') ? normalizedOutput : `${normalizedOutput}\n`
+}
+
+const disposeTerminalRuntime = (id: string) => {
+  const runtime = terminalRuntimes.get(id)
+  if (!runtime) return
+  runtime.disposables.forEach((disposable) => disposable.dispose())
+  runtime.terminal.dispose()
+  terminalRuntimes.delete(id)
+}
+
+const disposeAllTerminalRuntimes = () => {
+  Array.from(terminalRuntimes.keys()).forEach(disposeTerminalRuntime)
 }
 
 const minimizeActiveTerminal = () => {
@@ -1181,63 +1476,6 @@ const handleCommandBoxKeydown = (event: KeyboardEvent, terminal: TerminalWindow)
   }
 }
 
-const handleTerminalKeydown = async (event: KeyboardEvent, terminal: TerminalWindow) => {
-  if (terminal.inputMode !== 'direct-terminal' || terminal.status !== 'connected' || !terminal.sessionId) {
-    return
-  }
-
-  const data = keyboardEventToTerminalData(event)
-  if (!data) return
-  event.preventDefault()
-  await writeSshShell(terminal.sessionId, data)
-}
-
-const handleTerminalBeforeInput = async (event: InputEvent, terminal: TerminalWindow) => {
-  if (terminal.inputMode !== 'direct-terminal' || terminal.status !== 'connected' || !terminal.sessionId) {
-    return
-  }
-
-  if (event.inputType === 'insertText' && event.data) {
-    event.preventDefault()
-    await writeSshShell(terminal.sessionId, event.data)
-  } else if (event.inputType === 'insertParagraph' || event.inputType === 'insertLineBreak') {
-    event.preventDefault()
-    await writeSshShell(terminal.sessionId, '\r')
-  } else if (event.inputType === 'deleteContentBackward') {
-    event.preventDefault()
-    await writeSshShell(terminal.sessionId, '\x7F')
-  }
-}
-
-const handleTerminalPaste = async (event: ClipboardEvent, terminal: TerminalWindow) => {
-  if (terminal.inputMode !== 'direct-terminal' || terminal.status !== 'connected' || !terminal.sessionId) {
-    return
-  }
-
-  const text = event.clipboardData?.getData('text/plain')
-  if (!text) return
-  event.preventDefault()
-  await writeSshShell(terminal.sessionId, text.replace(/\r\n/g, '\r').replace(/\n/g, '\r'))
-}
-
-const keyboardEventToTerminalData = (event: KeyboardEvent): string => {
-  if (event.ctrlKey && event.key.length === 1) {
-    const code = event.key.toUpperCase().charCodeAt(0)
-    if (code >= 64 && code <= 95) {
-      return String.fromCharCode(code - 64)
-    }
-  }
-  if (event.key === 'Enter') return '\r'
-  if (event.key === 'Backspace') return '\x7F'
-  if (event.key === 'Tab') return '\t'
-  if (event.key === 'Escape') return '\x1b'
-  if (event.key === 'ArrowUp') return '\x1b[A'
-  if (event.key === 'ArrowDown') return '\x1b[B'
-  if (event.key === 'ArrowRight') return '\x1b[C'
-  if (event.key === 'ArrowLeft') return '\x1b[D'
-  return ''
-}
-
 const executeCommandInTerminal = async (command: string, terminal: TerminalWindow) => {
   const sessionId = terminal.sessionId
   if (!sessionId) return
@@ -1247,7 +1485,7 @@ const executeCommandInTerminal = async (command: string, terminal: TerminalWindo
     const currentTerminal = findTerminal(terminal.id)
     if (!currentTerminal) return
     if (result.output) {
-      currentTerminal.output += result.output.endsWith('\n') ? result.output : `${result.output}\n`
+      appendCommandResultOutput(currentTerminal, result.output)
     }
     if (!result.success) {
       currentTerminal.output += `${result.error || '命令执行失败'}\n`
@@ -1291,6 +1529,7 @@ const closeTerminal = async (id = activeTerminalId.value) => {
     }
     await disconnectSshSession(sessionId)
   }
+  disposeTerminalRuntime(id)
 }
 
 const openSessionEditor = (session?: SessionConfig) => {

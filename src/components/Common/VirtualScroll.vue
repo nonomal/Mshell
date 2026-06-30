@@ -1,5 +1,10 @@
 <template>
-  <div ref="containerRef" class="virtual-scroll" @scroll="handleScroll">
+  <div
+    ref="containerRef"
+    class="virtual-scroll"
+    :class="{ 'no-inner-scroll': disableInnerScroll }"
+    @scroll="handleScroll"
+  >
     <div class="virtual-scroll-spacer" :style="{ height: `${totalHeight}px` }">
       <div class="virtual-scroll-content" :style="{ transform: `translateY(${offsetY}px)` }">
         <div
@@ -23,11 +28,13 @@ interface Props {
   itemHeight: number
   buffer?: number // 缓冲区项目数
   keyField?: string // 用于 key 的字段名
+  disableInnerScroll?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   buffer: 5,
-  keyField: 'id'
+  keyField: 'id',
+  disableInnerScroll: false
 })
 
 const containerRef = ref<HTMLElement>()
@@ -150,6 +157,10 @@ defineExpose({
   overflow-y: auto;
   overflow-x: hidden;
   position: relative;
+}
+
+.virtual-scroll.no-inner-scroll {
+  overflow-y: visible;
 }
 
 .virtual-scroll-spacer {

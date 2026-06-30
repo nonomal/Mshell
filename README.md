@@ -119,11 +119,13 @@ MShell 是一款现代化、功能丰富的 SSH 客户端，基于 Electron、Vu
 - **前端框架**: Vue 3 + TypeScript + Vite
 - **UI 组件**: Element Plus
 - **桌面框架**: Electron
+- **移动端框架**: Capacitor Android
 - **SSH 库**: ssh2
+- **Android SSH 桥**: JSch + Capacitor Plugin
 - **终端**: xterm.js + addons
 - **状态管理**: Pinia
 - **国际化**: vue-i18n
-- **构建工具**: electron-builder
+- **构建工具**: Vite + electron-builder
 
 ## 📂 项目结构
 
@@ -180,6 +182,16 @@ mshell/
 │       └── locales/
 │           ├── zh-CN.ts
 │           └── en-US.ts
+├── src/mobile/                  # Android 移动端 Web 入口
+│   ├── MobileApp.vue            # 移动端根组件
+│   ├── components/              # 移动端设置、导入导出、安全锁组件
+│   ├── services/                # 移动端数据、同步、安全和 Android SSH 桥接
+│   └── README.md                # 移动端开发与打包说明
+├── android/                     # Capacitor Android 原生工程
+│   └── app/src/main/java/com/mshell/mobile/
+│       ├── AndroidSshBridge.java
+│       ├── SecurityBridge.java
+│       └── MainActivity.java
 └── release/                    # 构建输出
 ```
 
@@ -189,6 +201,12 @@ mshell/
 
 - Node.js 18+
 - npm 或 yarn
+
+Android 移动端还需要：
+
+- Android Studio
+- Android SDK / Build Tools
+- JDK 21（当前 Android 工程使用 Java 21 编译选项）
 
 ### 安装依赖
 
@@ -202,10 +220,34 @@ npm install
 npm run dev
 ```
 
+移动端 Web 调试：
+
+```bash
+npm run mobile:dev
+```
+
 ### 构建应用
 
 ```bash
 npm run build
+```
+
+移动端 Web 资源构建：
+
+```bash
+npm run mobile:build
+```
+
+同步到 Android 原生工程：
+
+```bash
+npm run android:sync
+```
+
+打开 Android Studio：
+
+```bash
+npm run android:open
 ```
 
 ### 测试
@@ -216,13 +258,30 @@ npm test
 
 ## 📦 打包发布
 
-应用使用 electron-builder 打包为 Windows 安装程序（NSIS）。
+桌面端使用 electron-builder 打包为 Windows 安装程序（NSIS）。
 
 ```bash
 npm run build
 ```
 
 生成的安装包位于 `release/` 目录。
+
+Android 端打包流程：
+
+```bash
+npm run mobile:typecheck
+npm run android:sync
+npm run android:open
+```
+
+在 Android Studio 中选择 `Build > Build Bundle(s) / APK(s) > Build APK(s)` 生成调试 APK，或选择 `Generate Signed Bundle / APK` 配置签名后生成发布包。也可以在 `android/` 目录执行：
+
+```bash
+.\gradlew assembleDebug
+.\gradlew bundleRelease
+```
+
+调试 APK 通常输出到 `android/app/build/outputs/apk/debug/`；发布包需要配置正式签名文件，签名文件不应提交到仓库。
 
 ## 🔐 安全性
 

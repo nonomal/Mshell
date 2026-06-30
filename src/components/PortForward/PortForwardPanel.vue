@@ -451,4 +451,25 @@ const getStatusTagType = (status: string) => {
 :deep(.el-table__body tr:hover > td) {
   background: var(--bg-hover) !important;
 }
+
+:global(:root.app-appearance-terminal .port-forward-panel) {
+  background: var(--bg-main);
+}
+
+:global(:root.app-appearance-terminal .panel-header) {
+  padding: 9px 12px;
+}
+
+:global(:root.app-appearance-terminal .panel-header h3) {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+}
+
+:global(:root.app-appearance-terminal .forward-list) {
+  padding: 12px;
+}
+
+:global(:root.app-appearance-terminal .form-help) {
+  font-size: var(--text-xs);
+}
 </style>

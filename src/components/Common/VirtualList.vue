@@ -6,6 +6,7 @@
       :item-height="itemHeight"
       :buffer="buffer"
       :key-field="keyField"
+      :disable-inner-scroll="disableInnerScroll"
     >
       <template #default="{ item, index }">
         <slot :item="item" :index="index"></slot>
@@ -54,6 +55,7 @@ interface Props {
   emptyText?: string
   hasMore?: boolean
   loading?: boolean
+  disableInnerScroll?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -61,7 +63,8 @@ const props = withDefaults(defineProps<Props>(), {
   keyField: 'id',
   emptyText: '暂无数据',
   hasMore: false,
-  loading: false
+  loading: false,
+  disableInnerScroll: false
 })
 
 defineEmits<{

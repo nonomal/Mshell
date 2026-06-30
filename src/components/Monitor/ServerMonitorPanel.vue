@@ -524,4 +524,192 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+:global(:root.app-appearance-terminal .monitor-sidebar) {
+  background: var(--bg-main);
+  border-left: 1px solid var(--border-strong);
+  box-shadow: inset 1px 0 0 rgba(var(--primary-color-rgb), 0.06);
+}
+
+:global(:root.app-appearance-terminal .monitor-sidebar .server-monitor-panel.compact) {
+  width: 100%;
+  border-left: 0;
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel) {
+  --monitor-card-bg: #020404;
+  --monitor-card-bg-soft: #07100f;
+  --monitor-card-border: var(--terminal-line);
+  --monitor-text: #d7f7ec;
+  --monitor-muted: #91b9ad;
+  --monitor-dim: #6f9288;
+  --monitor-strong: #b9fbe3;
+  --monitor-track: rgba(215, 247, 236, 0.16);
+
+  background: var(--bg-main);
+  color: var(--text-primary);
+}
+
+:global(:root.light-theme.app-appearance-terminal .server-monitor-panel) {
+  --monitor-card-bg: #03110d;
+  --monitor-card-bg-soft: #071a14;
+  --monitor-card-border: rgba(var(--primary-color-rgb), 0.34);
+  --monitor-text: #d9fff0;
+  --monitor-muted: #9ccfbc;
+  --monitor-dim: #76a493;
+  --monitor-strong: #bfffe9;
+  --monitor-track: rgba(217, 255, 240, 0.18);
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .monitor-header) {
+  min-height: 48px;
+  padding: 10px 14px;
+  background:
+    linear-gradient(90deg, rgba(var(--primary-color-rgb), 0.08), transparent 210px),
+    var(--bg-secondary);
+  border-bottom: 1px solid var(--border-strong);
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .monitor-header h3) {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  letter-spacing: 0;
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .monitor-header h3::before) {
+  content: '$ ';
+  color: var(--primary-color);
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .header-actions) {
+  gap: 8px;
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .btn-toggle),
+:global(:root.app-appearance-terminal .server-monitor-panel .btn-refresh) {
+  width: 40px;
+  height: 28px;
+  min-width: 40px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  border-color: var(--border-medium);
+  background: var(--bg-main);
+  color: var(--primary-color);
+  font-family: var(--font-mono);
+  line-height: 1;
+  box-shadow: none;
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .btn-toggle.active) {
+  background: var(--primary-color);
+  border-color: var(--primary-hover);
+  color: var(--text-inverse);
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .btn-refresh:hover:not(:disabled)),
+:global(:root.app-appearance-terminal .server-monitor-panel .btn-toggle:hover) {
+  background: rgba(var(--primary-color-rgb), 0.12);
+  border-color: var(--terminal-line);
+  color: var(--primary-light);
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .btn-refresh:disabled) {
+  color: var(--text-disabled);
+  border-color: var(--border-color);
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .monitor-content.compact) {
+  padding: 12px;
+  gap: 10px;
+  background: var(--bg-main);
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .metric-card.compact) {
+  background:
+    linear-gradient(180deg, rgba(var(--primary-color-rgb), 0.055), transparent 62px),
+    var(--monitor-card-bg) !important;
+  border: 1px solid var(--monitor-card-border) !important;
+  border-radius: var(--radius-sm) !important;
+  box-shadow: inset 0 0 0 1px rgba(var(--primary-color-rgb), 0.045) !important;
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .metric-title),
+:global(:root.app-appearance-terminal .server-monitor-panel .network-label),
+:global(:root.app-appearance-terminal .server-monitor-panel .info-label),
+:global(:root.app-appearance-terminal .server-monitor-panel .compact-table th) {
+  color: var(--monitor-muted) !important;
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .metric-value),
+:global(:root.app-appearance-terminal .server-monitor-panel .info-value),
+:global(:root.app-appearance-terminal .server-monitor-panel .compact-table td) {
+  color: var(--monitor-text) !important;
+  font-family: var(--font-mono);
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .metric-info),
+:global(:root.app-appearance-terminal .server-monitor-panel .network-total),
+:global(:root.app-appearance-terminal .server-monitor-panel .update-time) {
+  color: var(--monitor-dim) !important;
+  font-family: var(--font-mono);
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .progress-bar.mini) {
+  background: var(--monitor-track);
+  border-radius: var(--radius-xs);
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .network-row),
+:global(:root.app-appearance-terminal .server-monitor-panel .info-row) {
+  gap: 8px;
+  min-width: 0;
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .network-stats) {
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .network-speed) {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--primary-color) !important;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .network-total) {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .compact-table) {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .compact-table th) {
+  border-bottom-color: rgba(var(--primary-color-rgb), 0.22);
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .compact-table tbody tr:hover td) {
+  background: var(--monitor-card-bg-soft);
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .monitor-empty),
+:global(:root.app-appearance-terminal .server-monitor-panel .monitor-loading) {
+  background: var(--bg-main);
+  color: var(--text-secondary);
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .spinner) {
+  border-color: var(--border-color);
+  border-top-color: var(--primary-color);
+}
 </style>

@@ -4,7 +4,7 @@
     <LockScreen v-if="isLocked" @unlock="handleUnlock" />
 
     <div class="app-layout" v-show="lockStatusReady && !isLocked">
-      <Sidebar @menu-select="handleMenuSelect" />
+      <Sidebar @menu-select="handleMenuSelect" @about-select="handleAboutSelect" />
 
       <div class="app-main">
         <div class="app-header">
@@ -312,7 +312,7 @@
           </div>
 
           <div v-show="appStore.activeView === 'settings'" class="content-panel">
-            <SettingsPanel />
+            <SettingsPanel :initial-tab="settingsInitialTab" :tab-request-key="settingsTabRequestKey" />
           </div>
         </div>
 
@@ -419,6 +419,14 @@ const layoutMode = ref<'auto' | 'horizontal' | 'vertical'>('auto')
 const broadcastMode = ref(false)
 const showBatchImport = ref(false)
 const maximizedPaneId = ref<string | null>(null)
+const settingsInitialTab = ref('general')
+const settingsTabRequestKey = ref(0)
+
+const openSettingsPanel = (tab = 'general') => {
+  settingsInitialTab.value = tab
+  settingsTabRequestKey.value += 1
+  appStore.activeView = 'settings'
+}
 
 // 当前焦点的分屏索引（用于快捷键切换）
 const focusedPaneIndex = ref(0)
@@ -725,7 +733,7 @@ function setupMainProcessShortcuts() {
   // Ctrl+,: 打开设置
   const u5 = window.electronAPI.onShortcut('settings', () => {
     console.log('[Shortcut IPC] Settings triggered')
-    appStore.activeView = 'settings'
+    openSettingsPanel()
   })
   if (u5) ipcCleanups.push(u5)
 
@@ -904,7 +912,7 @@ async function setupKeyboardShortcuts() {
     description: '打开设置',
     action: () => {
       console.log('[Shortcut] Open settings triggered')
-      appStore.activeView = 'settings'
+      openSettingsPanel()
     }
   })
 
@@ -1059,7 +1067,15 @@ const handleUnlock = () => {
 }
 
 const handleMenuSelect = (index: string) => {
+  if (index === 'settings') {
+    openSettingsPanel()
+    return
+  }
   appStore.activeView = index as any
+}
+
+const handleAboutSelect = () => {
+  openSettingsPanel('about')
 }
 
 const handleConnect = async (session: SessionConfig) => {
@@ -1362,6 +1378,8 @@ body,
 
 .premium-tabs :deep(.el-tabs__nav) {
   border: none !important;
+  height: 100%;
+  align-items: flex-end;
 }
 
 .premium-tabs :deep(.el-tabs__item) {
@@ -1379,6 +1397,13 @@ body,
   position: relative;
   margin-right: 4px;
   border-radius: var(--radius-md) var(--radius-md) 0 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 220px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .premium-tabs :deep(.el-tabs__item::before) {
@@ -1408,11 +1433,30 @@ body,
   background: var(--bg-hover);
 }
 
+.premium-tabs :deep(.el-tabs__item.is-closable),
+.premium-tabs :deep(.el-tabs__item.is-active.is-closable),
+.premium-tabs :deep(.el-tabs__item.is-closable:hover) {
+  padding-left: var(--spacing-lg) !important;
+  padding-right: var(--spacing-md) !important;
+}
+
+.premium-tabs :deep(.el-tabs__item .draggable-tab) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .premium-tabs :deep(.el-tabs__item .el-icon-close) {
   width: 16px;
   height: 16px;
   border-radius: 50%;
   transition: all var(--transition-fast);
+  margin-left: 0;
+  right: auto;
+  flex: 0 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
 }
 
 .premium-tabs :deep(.el-tabs__item .el-icon-close:hover) {
@@ -1547,9 +1591,149 @@ body,
     height: 96px;
   }
 
-  .empty-state h3 {
-    font-size: var(--text-xl);
-  }
+.empty-state h3 {
+  font-size: var(--text-xl);
+}
+}
+
+:global(:root.app-appearance-terminal .app-layout) {
+  background: var(--bg-main);
+}
+
+:global(:root.app-appearance-terminal .app-header) {
+  height: 40px;
+  padding: 0 10px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: none;
+}
+
+:global(:root.app-appearance-terminal .app-header .header-actions) {
+  gap: 5px;
+}
+
+:global(:root.app-appearance-terminal .app-header .header-actions .el-button) {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
+
+:global(:root.app-appearance-terminal .sessions-panel) {
+  width: 286px;
+  min-width: 286px;
+  background: var(--bg-secondary);
+  box-shadow: none;
+}
+
+:global(:root.app-appearance-terminal .session-panel-toggle) {
+  left: 286px;
+  width: 12px;
+  height: 42px;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+:global(:root.app-appearance-terminal .session-panel-toggle:hover) {
+  width: 14px;
+}
+
+:global(:root.app-appearance-terminal .session-panel-toggle.collapsed) {
+  left: 0;
+  border-left: 1px solid var(--border-color);
+}
+
+:global(:root.app-appearance-terminal .terminal-panel.expanded) {
+  margin-left: 0;
+}
+
+:global(:root.app-appearance-terminal .premium-tabs) {
+  --el-tabs-header-height: 34px;
+}
+
+:global(:root.app-appearance-terminal .premium-tabs .el-tabs__header) {
+  padding: 0;
+  background: var(--bg-tertiary);
+}
+
+:global(:root.app-appearance-terminal .premium-tabs .el-tabs__item) {
+  height: 34px;
+  line-height: 34px;
+  padding: 0 12px;
+  margin-right: 0;
+  border-right: 1px solid var(--border-color) !important;
+  border-radius: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+:global(:root.app-appearance-terminal .premium-tabs .el-tabs__item.is-closable),
+:global(:root.app-appearance-terminal .premium-tabs .el-tabs__item.is-active.is-closable),
+:global(:root.app-appearance-terminal .premium-tabs .el-tabs__item.is-closable:hover) {
+  padding-left: 12px !important;
+  padding-right: 8px !important;
+}
+
+:global(:root.app-appearance-terminal .premium-tabs .el-tabs__item .el-icon-close) {
+  width: 14px;
+  height: 14px;
+  flex-basis: 14px;
+  color: currentColor;
+}
+
+:global(:root.app-appearance-terminal .premium-tabs .el-tabs__item.is-active) {
+  background: var(--bg-main);
+  color: var(--text-primary);
+}
+
+:global(:root.app-appearance-terminal .premium-tabs .el-tabs__item::before) {
+  top: 0;
+  bottom: auto;
+  height: 2px;
+}
+
+:global(:root.app-appearance-terminal .empty-state) {
+  background: var(--bg-main);
+}
+
+:global(:root.app-appearance-terminal .empty-state::before),
+:global(:root.app-appearance-terminal .empty-icon-wrapper::after) {
+  display: none;
+}
+
+:global(:root.app-appearance-terminal .empty-state-content) {
+  padding: var(--spacing-xl);
+  animation: none;
+}
+
+:global(:root.app-appearance-terminal .empty-icon-wrapper) {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  box-shadow: none;
+}
+
+:global(:root.app-appearance-terminal .empty-state h3) {
+  font-size: var(--text-lg);
+  letter-spacing: 0;
+}
+
+:global(:root.app-appearance-terminal .split-toolbar) {
+  min-height: 34px;
+  padding: 5px 8px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+:global(:root.app-appearance-terminal .split-toolbar .terminal-count),
+:global(:root.app-appearance-terminal .split-toolbar .shortcut-hint) {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+:global(:root.app-appearance-terminal .divider-vertical) {
+  background: var(--border-color);
 }
 
 /* 动画 */
