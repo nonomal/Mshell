@@ -68,6 +68,7 @@
 <script setup lang="ts">
 import { ref, reactive, watch } from 'vue'
 import { themes, getThemeNames } from '@/utils/terminal-themes'
+import type { TerminalBackgroundConfig } from '@/types/terminal-background'
 
 interface TerminalSettings {
   theme: string
@@ -78,6 +79,7 @@ interface TerminalSettings {
   scrollback: number
   rendererType: 'auto' | 'dom' | 'canvas' | 'webgl'
   copyOnSelect: boolean
+  background?: TerminalBackgroundConfig
 }
 
 interface Props {
@@ -102,7 +104,14 @@ const defaultSettings: TerminalSettings = {
   cursorBlink: true,
   scrollback: 10000,
   rendererType: 'auto',
-  copyOnSelect: false
+  copyOnSelect: false,
+  background: {
+    enabled: false,
+    source: 'url',
+    image: '',
+    opacity: 18,
+    fit: 'cover'
+  }
 }
 
 const settings = reactive<TerminalSettings>({ ...props.currentSettings })

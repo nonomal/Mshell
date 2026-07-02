@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { SessionConfig, SessionGroup } from '@/types/session'
+import type { TerminalBackgroundConfig } from '@/types/terminal-background'
 import { terminalShortcutsManager } from '@/utils/terminal-shortcuts'
 import { applyAppShellTheme, type AppColorTheme } from '@/utils/app-appearance'
 
@@ -33,6 +34,7 @@ export interface TerminalOptions {
   scrollback: number
   rendererType: 'auto' | 'dom' | 'canvas' | 'webgl'
   copyOnSelect: boolean
+  background?: TerminalBackgroundConfig
 }
 
 /**
@@ -230,7 +232,14 @@ export const useAppStore = defineStore('app', () => {
     cursorBlink: true,
     scrollback: 10000,
     rendererType: 'webgl',
-    copyOnSelect: false
+    copyOnSelect: false,
+    background: {
+      enabled: false,
+      source: 'url',
+      image: '',
+      opacity: 18,
+      fit: 'cover'
+    }
   })
 
   // 更新终端配置
@@ -266,7 +275,8 @@ export const useAppStore = defineStore('app', () => {
         cursorBlink: settings.terminal.cursorBlink,
         scrollback: settings.terminal.scrollback,
         rendererType: settings.terminal.rendererType || 'auto',
-        copyOnSelect: settings.terminal.copyOnSelect || false
+        copyOnSelect: settings.terminal.copyOnSelect || false,
+        background: settings.terminal.background
       })
     }
 

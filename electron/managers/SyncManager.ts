@@ -7,6 +7,7 @@ import { createHash } from 'crypto'
 import { backupManager, BackupData } from './BackupManager'
 import { logger } from '../utils/logger'
 import { credentialManager } from './CredentialManager'
+import { isLocalTerminalBackground } from '../../src/types/terminal-background'
 import axios from 'axios'
 
 /**
@@ -395,7 +396,32 @@ export class SyncManager {
    * 收集同步数据
    */
   private async collectSyncData(): Promise<BackupData> {
-    return backupManager.collectBackupData()
+    const data = await backupManager.collectBackupData()
+    return this.stripLocalTerminalBackgrounds(data)
+  }
+
+  private stripLocalTerminalBackgrounds(data: BackupData): BackupData {
+    const sanitized = JSON.parse(JSON.stringify(data)) as BackupData
+    const terminalBackground = sanitized.settings?.terminal?.background
+    delete sanitized.terminalBackgroundAssets
+
+    if (terminalBackground && isLocalTerminalBackground(terminalBackground)) {
+      delete sanitized.settings.terminal.background
+    }
+
+    if (Array.isArray(sanitized.sessions)) {
+      sanitized.sessions = sanitized.sessions.map((session: any) => {
+        if (session.terminalBackground && isLocalTerminalBackground(session.terminalBackground)) {
+          const cleanSession = { ...session }
+          delete cleanSession.terminalBackground
+          return cleanSession
+        }
+
+        return session
+      })
+    }
+
+    return sanitized
   }
 
   /**

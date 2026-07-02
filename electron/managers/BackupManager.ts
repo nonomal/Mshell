@@ -1,9 +1,10 @@
 /* global Buffer, NodeJS */
 
 import { app, BrowserWindow } from 'electron'
-import { join } from 'path'
+import { basename, extname, isAbsolute, join, resolve, sep } from 'path'
 import { promises as fs } from 'fs'
-import { createCipheriv, createDecipheriv, randomBytes, scrypt } from 'crypto'
+import { createCipheriv, createDecipheriv, randomBytes, randomUUID, scrypt } from 'crypto'
+import { fileURLToPath } from 'url'
 import { promisify } from 'util'
 import { sessionManager } from './SessionManager'
 import { snippetManager } from './SnippetManager'
@@ -21,10 +22,27 @@ import { logger } from '../utils/logger'
 import { credentialManager } from './CredentialManager'
 
 const scryptAsync = promisify(scrypt)
+const TERMINAL_BACKGROUND_SCHEME = 'mshell-terminal-background'
+const TERMINAL_BACKGROUND_BACKUP_MAX_SIZE = 20 * 1024 * 1024
+const TERMINAL_BACKGROUND_EXTENSIONS = new Set([
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.gif',
+  '.bmp'
+])
 
 /**
  * 备份数据接口
  */
+export interface TerminalBackgroundAssetBackup {
+  image: string
+  fileName: string
+  data: string
+  encoding?: 'base64'
+}
+
 export interface BackupData {
   version: string
   timestamp: string
@@ -50,6 +68,7 @@ export interface BackupData {
   transferRecords?: any[] // 传输记录
   lockConfig?: any // 锁定配置（不包含密码）
   quickCommands?: any[] // 快捷命令
+  terminalBackgroundAssets?: TerminalBackgroundAssetBackup[] // 本地终端背景图附件
 }
 
 /**
@@ -267,18 +286,251 @@ export class BackupManager {
     }
   }
 
+  private getBackupVersion(): string {
+    try {
+      return app.getVersion() || '0.2.8'
+    } catch {
+      return '0.2.8'
+    }
+  }
+
+  private getTerminalBackgroundDir(): string {
+    return join(app.getPath('userData'), 'terminal-backgrounds')
+  }
+
+  private toTerminalBackgroundUrl(fileName: string): string {
+    return `${TERMINAL_BACKGROUND_SCHEME}://local/${encodeURIComponent(fileName)}`
+  }
+
+  private sanitizeTerminalBackgroundBaseName(value: string): string {
+    return (
+      value
+        .replace(/[<>:"/\\|?*\x00-\x1F]/g, '-')
+        .replace(/\s+/g, '-')
+        .slice(0, 80)
+        .replace(/^-+|-+$/g, '') || 'background'
+    )
+  }
+
+  private getSafeTerminalBackgroundExtension(fileName: string): string {
+    const extension = extname(fileName).toLowerCase()
+    return TERMINAL_BACKGROUND_EXTENSIONS.has(extension) ? extension : '.png'
+  }
+
+  private isPathInside(parentDir: string, childPath: string): boolean {
+    const parent = resolve(parentDir)
+    const child = resolve(childPath)
+    return child === parent || child.startsWith(`${parent}${sep}`)
+  }
+
+  private isLocalTerminalBackground(background: any): boolean {
+    const image = typeof background?.image === 'string' ? background.image.trim() : ''
+    if (!image) return false
+
+    return (
+      background?.source === 'local' ||
+      /^mshell-terminal-background:/i.test(image) ||
+      /^file:/i.test(image) ||
+      /^[a-zA-Z]:[\\/]/.test(image) ||
+      /^\\\\/.test(image) ||
+      /^\//.test(image)
+    )
+  }
+
+  private getFileNameFromTerminalBackgroundImage(image: string): string | undefined {
+    try {
+      if (/^mshell-terminal-background:/i.test(image)) {
+        const url = new URL(image)
+        const fileName = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
+        return fileName && basename(fileName) === fileName ? fileName : undefined
+      }
+
+      const resolvedPath = this.resolveTerminalBackgroundFilePath(image)
+      return resolvedPath ? basename(resolvedPath) : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  private resolveTerminalBackgroundFilePath(image: string): string | undefined {
+    const value = image.trim()
+    if (!value) return undefined
+
+    if (/^mshell-terminal-background:/i.test(value)) {
+      try {
+        const url = new URL(value)
+        const fileName = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
+        if (!fileName || basename(fileName) !== fileName) return undefined
+
+        const targetDir = resolve(this.getTerminalBackgroundDir())
+        const targetPath = resolve(targetDir, fileName)
+        return this.isPathInside(targetDir, targetPath) ? targetPath : undefined
+      } catch {
+        return undefined
+      }
+    }
+
+    if (/^file:/i.test(value)) {
+      try {
+        return fileURLToPath(value)
+      } catch {
+        return undefined
+      }
+    }
+
+    if (isAbsolute(value) || /^[a-zA-Z]:[\\/]/.test(value) || /^\\\\/.test(value)) {
+      return value
+    }
+
+    return undefined
+  }
+
+  private async collectTerminalBackgroundAssets(
+    settings: any,
+    sessions: any[]
+  ): Promise<TerminalBackgroundAssetBackup[] | undefined> {
+    const backgrounds = [
+      settings?.terminal?.background,
+      ...sessions.map((session) => session?.terminalBackground)
+    ]
+    const seenImages = new Set<string>()
+    const assets: TerminalBackgroundAssetBackup[] = []
+
+    for (const background of backgrounds) {
+      if (!this.isLocalTerminalBackground(background)) continue
+
+      const image = background.image.trim()
+      if (seenImages.has(image)) continue
+      seenImages.add(image)
+
+      const filePath = this.resolveTerminalBackgroundFilePath(image)
+      if (!filePath) continue
+
+      try {
+        const stat = await fs.stat(filePath)
+        if (!stat.isFile()) continue
+
+        if (stat.size > TERMINAL_BACKGROUND_BACKUP_MAX_SIZE) {
+          logger.logInfo(
+            'system',
+            `Skipped terminal background in backup because it exceeds 20MB: ${filePath}`
+          )
+          continue
+        }
+
+        const buffer = await fs.readFile(filePath)
+        assets.push({
+          image,
+          fileName: background.fileName || basename(filePath),
+          data: buffer.toString('base64'),
+          encoding: 'base64'
+        })
+      } catch (error) {
+        logger.logError(
+          'system',
+          `Failed to collect terminal background asset: ${filePath}`,
+          error as Error
+        )
+      }
+    }
+
+    return assets.length > 0 ? assets : undefined
+  }
+
+  private rewriteTerminalBackgroundImage(background: any, imageMap: Map<string, string>): any {
+    const image = typeof background?.image === 'string' ? background.image : ''
+    const restoredImage = imageMap.get(image)
+    return restoredImage ? { ...background, source: 'local', image: restoredImage } : background
+  }
+
+  private async restoreTerminalBackgroundAssets(
+    backupData: BackupData,
+    options: { restoreSettings: boolean; restoreSessions: boolean }
+  ): Promise<void> {
+    if (!options.restoreSettings && !options.restoreSessions) return
+
+    const assets = backupData.terminalBackgroundAssets
+    if (!Array.isArray(assets) || assets.length === 0) return
+
+    const targetDir = this.getTerminalBackgroundDir()
+    await fs.mkdir(targetDir, { recursive: true })
+
+    const imageMap = new Map<string, string>()
+    for (const asset of assets) {
+      if (!asset?.image || !asset.data) continue
+      if (asset.encoding && asset.encoding !== 'base64') continue
+
+      try {
+        const buffer = Buffer.from(asset.data, 'base64')
+        if (buffer.length === 0 || buffer.length > TERMINAL_BACKGROUND_BACKUP_MAX_SIZE) {
+          continue
+        }
+
+        const sourceName =
+          asset.fileName || this.getFileNameFromTerminalBackgroundImage(asset.image) || 'background.png'
+        const sourceExtension = extname(sourceName).toLowerCase()
+        const extension = this.getSafeTerminalBackgroundExtension(sourceName)
+        const baseName = this.sanitizeTerminalBackgroundBaseName(
+          TERMINAL_BACKGROUND_EXTENSIONS.has(sourceExtension)
+            ? sourceName.slice(0, sourceName.length - sourceExtension.length)
+            : sourceName
+        )
+        const targetName = `${Date.now()}-${randomUUID()}-${baseName}${extension}`
+
+        await fs.writeFile(join(targetDir, targetName), buffer)
+        imageMap.set(asset.image, this.toTerminalBackgroundUrl(targetName))
+      } catch (error) {
+        logger.logError(
+          'system',
+          `Failed to restore terminal background asset: ${asset.fileName || asset.image}`,
+          error as Error
+        )
+      }
+    }
+
+    if (imageMap.size === 0) return
+
+    if (options.restoreSettings && backupData.settings?.terminal?.background) {
+      backupData.settings.terminal.background = this.rewriteTerminalBackgroundImage(
+        backupData.settings.terminal.background,
+        imageMap
+      )
+    }
+
+    if (options.restoreSessions && Array.isArray(backupData.sessions)) {
+      backupData.sessions = backupData.sessions.map((session) =>
+        session?.terminalBackground
+          ? {
+              ...session,
+              terminalBackground: this.rewriteTerminalBackgroundImage(
+                session.terminalBackground,
+                imageMap
+              )
+            }
+          : session
+      )
+    }
+  }
+
   /**
    * 收集完整备份数据。
    * 手动备份、自动备份和云同步都走这里，避免不同出口保存的数据集合不一致。
    */
-  async collectBackupData(options: { includeLocalConfigs?: boolean } = {}): Promise<BackupData> {
+  async collectBackupData(
+    options: { includeLocalConfigs?: boolean; includeLocalAssets?: boolean } = {}
+  ): Promise<BackupData> {
     const { quickCommandManager } = await import('./QuickCommandManager')
 
     // SessionManager 内存中的敏感字段已经是明文；外层备份/同步会整体加密。
     const sessions = sessionManager.getAllSessions().map((session) => ({ ...session }))
+    const settings = await this.getAppSettings()
+    const includeLocalAssets = options.includeLocalAssets ?? (options.includeLocalConfigs === true)
+    const terminalBackgroundAssets = includeLocalAssets
+      ? await this.collectTerminalBackgroundAssets(settings, sessions)
+      : undefined
 
     return {
-      version: '0.2.0',
+      version: this.getBackupVersion(),
       timestamp: new Date().toISOString(),
       sessions,
       sessionGroups: sessionManager.getAllGroups(),
@@ -290,7 +542,7 @@ export class BackupManager {
       sessionTemplates: sessionTemplateManager.getAll(),
       scheduledTasks: taskSchedulerManager.getAll(),
       workflows: workflowManager.getAll(),
-      settings: await this.getAppSettings(),
+      settings,
       backupConfig: options.includeLocalConfigs ? this.exportConfigForBackup() : undefined,
       syncConfig: options.includeLocalConfigs ? await this.collectSyncConfig() : undefined,
       aiConfig: await this.collectAIConfig(),
@@ -300,7 +552,8 @@ export class BackupManager {
       auditLogs: auditLogManager.getAll(),
       transferRecords: transferRecordManager.getAllRecords(),
       lockConfig: sessionLockManager.getConfig(),
-      quickCommands: quickCommandManager.getAll()
+      quickCommands: quickCommandManager.getAll(),
+      terminalBackgroundAssets
     }
   }
 
@@ -597,6 +850,15 @@ export class BackupManager {
     }
   ): Promise<void> {
     try {
+      await this.restoreTerminalBackgroundAssets(backupData, {
+        restoreSettings: options.restoreSettings,
+        restoreSessions: options.restoreSessions
+      })
+
+      const restoredSessionIds = new Map<string, string>()
+      const mapSessionReference = (value: any) =>
+        typeof value === 'string' ? restoredSessionIds.get(value) || value : value
+
       // 恢复会话（先恢复分组，再恢复会话，确保 groupId 能正确匹配）
       if (options.restoreSessions) {
         // 第一步：先恢复分组，保留原始 ID
@@ -655,8 +917,14 @@ export class BackupManager {
                 const updates = { ...cleanSession }
                 delete updates.id
                 await sessionManager.updateSession(existing.id, updates)
+                if (session.id) {
+                  restoredSessionIds.set(session.id, existing.id)
+                }
               } else {
-                await sessionManager.createSession(cleanSession)
+                const created = await sessionManager.createSession(cleanSession)
+                if (session.id) {
+                  restoredSessionIds.set(session.id, created.id)
+                }
               }
             } catch (error) {
               logger.logError(
@@ -750,11 +1018,18 @@ export class BackupManager {
       if (options.restorePortForwards && backupData.portForwards) {
         for (const forward of backupData.portForwards) {
           try {
+            const restoredForward = {
+              ...forward,
+              connectionId: mapSessionReference(forward.connectionId),
+              status: 'inactive' as const
+            }
+            delete restoredForward.error
+
             const existing = portForwardManager.getAllForwards().find((f) => f.id === forward.id)
             if (existing) {
-              await portForwardManager.updateForward(existing.id, forward)
+              await portForwardManager.updateForward(existing.id, restoredForward)
             } else {
-              await portForwardManager.addForward(forward)
+              await portForwardManager.addForward(restoredForward)
             }
           } catch (error) {
             logger.logError('system', `Failed to restore port forward`, error as Error)
@@ -810,13 +1085,17 @@ export class BackupManager {
       if (options.restoreScheduledTasks && backupData.scheduledTasks) {
         for (const task of backupData.scheduledTasks) {
           try {
+            const restoredTask = {
+              ...task,
+              sessionId: mapSessionReference(task.sessionId)
+            }
             const existing = taskSchedulerManager
               .getAll()
               .find((t) => t.id === task.id || t.name === task.name)
             if (existing) {
-              taskSchedulerManager.update(existing.id, task)
+              taskSchedulerManager.update(existing.id, restoredTask)
             } else {
-              taskSchedulerManager.create(task)
+              taskSchedulerManager.create(restoredTask)
             }
           } catch (error) {
             logger.logError(
@@ -832,13 +1111,22 @@ export class BackupManager {
       if (options.restoreWorkflows && backupData.workflows) {
         for (const workflow of backupData.workflows) {
           try {
+            const restoredWorkflow = {
+              ...workflow,
+              steps: Array.isArray(workflow.steps)
+                ? workflow.steps.map((step: any) => ({
+                    ...step,
+                    sessionId: mapSessionReference(step.sessionId)
+                  }))
+                : workflow.steps
+            }
             const existing = workflowManager
               .getAll()
               .find((w) => w.id === workflow.id || w.name === workflow.name)
             if (existing) {
-              workflowManager.update(existing.id, workflow)
+              workflowManager.update(existing.id, restoredWorkflow)
             } else {
-              workflowManager.create(workflow)
+              workflowManager.create(restoredWorkflow)
             }
           } catch (error) {
             logger.logError(
@@ -948,7 +1236,10 @@ export class BackupManager {
             const existing = connectionStatsManager.getAll().find((s) => s.id === stat.id)
             if (!existing) {
               // 使用内部方法添加记录
-              connectionStatsManager.create(stat)
+              connectionStatsManager.create({
+                ...stat,
+                sessionId: mapSessionReference(stat.sessionId)
+              })
             }
           }
           logger.logInfo(
@@ -966,7 +1257,10 @@ export class BackupManager {
           for (const log of backupData.auditLogs) {
             const existing = auditLogManager.getAll().find((l) => l.id === log.id)
             if (!existing) {
-              auditLogManager.create(log)
+              auditLogManager.create({
+                ...log,
+                sessionId: mapSessionReference(log.sessionId)
+              })
             }
           }
           logger.logInfo('system', `Audit logs restored: ${backupData.auditLogs.length} records`)

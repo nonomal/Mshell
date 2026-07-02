@@ -327,6 +327,15 @@ export interface ElectronAPI {
     reset: () => Promise<void>
     onChange: (callback: (settings: any) => void) => () => void
   }
+  terminalBackground: {
+    selectImage: () => Promise<
+      ApiResult<{
+        source: 'local'
+        image: string
+        fileName: string
+      } | null>
+    >
+  }
   backup: {
     getConfig: () => Promise<any>
     updateConfig: (updates: any) => Promise<any>

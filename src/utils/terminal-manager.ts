@@ -15,6 +15,61 @@ export type InputCallback = (data: string, lineBuffer: string) => void
 
 type RendererType = 'auto' | 'webgl' | 'canvas' | 'dom'
 
+const hasBackgroundImage = (options: any) =>
+  options?.background?.enabled === true && !!options.background.image
+
+const parseHexColor = (value?: string): { red: number; green: number; blue: number } | null => {
+  if (!value) return null
+
+  const trimmed = value.trim()
+  const shortHex = trimmed.match(/^#([0-9a-f]{3})$/i)
+  const longHex = trimmed.match(/^#([0-9a-f]{6})$/i)
+  const hex = shortHex
+    ? shortHex[1]
+        .split('')
+        .map((part) => part + part)
+        .join('')
+    : longHex?.[1]
+
+  if (!hex) return null
+
+  return {
+    red: parseInt(hex.slice(0, 2), 16),
+    green: parseInt(hex.slice(2, 4), 16),
+    blue: parseInt(hex.slice(4, 6), 16)
+  }
+}
+
+const getRelativeLuminance = (value?: string): number | null => {
+  const color = parseHexColor(value)
+  if (!color) return null
+
+  const channel = (component: number) => {
+    const normalized = component / 255
+    return normalized <= 0.03928
+      ? normalized / 12.92
+      : Math.pow((normalized + 0.055) / 1.055, 2.4)
+  }
+
+  return 0.2126 * channel(color.red) + 0.7152 * channel(color.green) + 0.0722 * channel(color.blue)
+}
+
+const isLightTerminalTheme = (theme: any) => {
+  const luminance = getRelativeLuminance(theme?.background)
+  return luminance !== null && luminance > 0.72
+}
+
+const shouldUseWebgl = (options: any) => {
+  const rendererType: RendererType = options?.rendererType || 'auto'
+  if (rendererType !== 'auto' && rendererType !== 'webgl') return false
+
+  // Background images require xterm transparency; light themes show visible glyph
+  // fringing with WebGL's texture atlas, especially after transparency is enabled.
+  if (hasBackgroundImage(options) || isLightTerminalTheme(options?.theme)) return false
+
+  return true
+}
+
 interface TerminalInstance {
   terminal: Terminal
   fitAddon: FitAddon
@@ -69,6 +124,7 @@ class TerminalManager {
       scrollback: options.scrollback || 10000,
       theme: options.theme,
       allowProposedApi: true,
+      allowTransparency: true,
       convertEol: false, // 关闭自动换行转换，由服务端PTY的ONLCR处理，避免双重转换导致显示错位
       windowsMode: false, // SSH 目标通常是 Linux/Unix，不应使用 Windows 模式
       altClickMovesCursor: true,
@@ -175,14 +231,13 @@ class TerminalManager {
     })
     terminal.loadAddon(webLinksAddon)
 
-    const rendererType: RendererType = options.rendererType || 'auto'
     let webglAddon: WebglAddon | undefined
-    if (rendererType === 'auto' || rendererType === 'webgl') {
+    if (shouldUseWebgl(options)) {
       try {
         webglAddon = new WebglAddon()
         terminal.loadAddon(webglAddon)
       } catch (error) {
-        if (rendererType === 'webgl') {
+        if (options.rendererType === 'webgl') {
           console.warn('WebGL renderer not available:', error)
         }
       }
@@ -382,6 +437,31 @@ class TerminalManager {
    */
   get(connectionId: string): TerminalInstance | undefined {
     return this.instances.get(connectionId)
+  }
+
+  setRendererMode(connectionId: string, options: any): void {
+    const instance = this.instances.get(connectionId)
+    if (!instance) return
+
+    if (!shouldUseWebgl(options)) {
+      if (instance.webglAddon) {
+        instance.webglAddon.dispose()
+        instance.webglAddon = undefined
+      }
+      return
+    }
+
+    if (instance.webglAddon) return
+
+    try {
+      const webglAddon = new WebglAddon()
+      instance.terminal.loadAddon(webglAddon)
+      instance.webglAddon = webglAddon
+    } catch (error) {
+      if (options?.rendererType === 'webgl') {
+        console.warn('WebGL renderer not available:', error)
+      }
+    }
   }
 
   /**

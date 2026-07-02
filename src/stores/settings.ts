@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import type { TerminalBackgroundConfig } from '@/types/terminal-background'
 
 export interface AppSettings {
   general: {
@@ -20,6 +21,7 @@ export interface AppSettings {
     cursorStyle: 'block' | 'underline' | 'bar'
     cursorBlink: boolean
     rendererType: 'auto' | 'webgl' | 'canvas' | 'dom'
+    background?: TerminalBackgroundConfig
   }
   sftp: {
     maxConcurrentTransfers: number
@@ -53,7 +55,14 @@ export const useSettingsStore = defineStore('settings', () => {
       scrollback: 1000,
       cursorStyle: 'block',
       cursorBlink: true,
-      rendererType: 'auto'
+      rendererType: 'auto',
+      background: {
+        enabled: false,
+        source: 'url',
+        image: '',
+        opacity: 18,
+        fit: 'cover'
+      }
     },
     sftp: {
       maxConcurrentTransfers: 3,

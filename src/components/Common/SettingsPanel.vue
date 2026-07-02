@@ -222,6 +222,60 @@
                   />
                 </el-select>
               </el-form-item>
+              <el-form-item label="终端背景">
+                <div class="terminal-background-form">
+                  <div class="terminal-background-line">
+                    <el-switch v-model="settings.terminal.background.enabled" />
+                    <span class="form-hint">作为所有 SSH 终端的默认背景</span>
+                  </div>
+                  <el-radio-group
+                    v-model="settings.terminal.background.source"
+                    size="small"
+                    class="background-source-group"
+                    @change="handleGlobalBackgroundSourceChange"
+                  >
+                    <el-radio-button label="local">上传图片</el-radio-button>
+                    <el-radio-button label="url">远程链接</el-radio-button>
+                  </el-radio-group>
+                  <div
+                    v-if="settings.terminal.background.source === 'local'"
+                    class="terminal-background-line"
+                  >
+                    <el-button size="small" @click="selectGlobalTerminalBackgroundImage">
+                      选择图片
+                    </el-button>
+                    <span class="background-file-name" :title="settings.terminal.background.fileName">
+                      {{ settings.terminal.background.fileName || '未选择图片' }}
+                    </span>
+                  </div>
+                  <el-input
+                    v-else
+                    v-model="settings.terminal.background.image"
+                    style="width: 420px"
+                    clearable
+                    placeholder="https://example.com/background.jpg"
+                    @input="handleGlobalBackgroundUrlInput"
+                  />
+                  <div class="terminal-background-slider">
+                    <span class="form-hint">图片透明度</span>
+                    <el-slider
+                      v-model="settings.terminal.background.opacity"
+                      :min="0"
+                      :max="100"
+                      :step="1"
+                      show-input
+                    />
+                  </div>
+                  <el-select v-model="settings.terminal.background.fit" style="width: 180px">
+                    <el-option label="覆盖" value="cover" />
+                    <el-option label="完整显示" value="contain" />
+                    <el-option label="拉伸" value="stretch" />
+                  </el-select>
+                  <el-button size="small" link @click="clearGlobalTerminalBackground">
+                    清除背景
+                  </el-button>
+                </div>
+              </el-form-item>
               <el-form-item label="光标样式">
                 <el-radio-group v-model="settings.terminal.cursorStyle">
                   <el-radio value="block">方块</el-radio>
@@ -1042,7 +1096,7 @@
               </div>
               <div class="info-item">
                 <label>许可证</label>
-                <span>MIT License</span>
+                <span>自定义非商用许可</span>
               </div>
               <div class="info-item">
                 <label>GitHub</label>
@@ -1158,7 +1212,7 @@
           />
         </el-form-item>
         <el-alert type="warning" :closable="false" show-icon style="margin-bottom: 12px">
-          <template #title> 备份将包含所有数据，包括SSH私钥文件 </template>
+          <template #title> 备份将包含所有数据，包括SSH私钥文件和本地终端背景图 </template>
         </el-alert>
         <el-alert type="info" :closable="false" show-icon>
           <template #title> 请妥善保管备份密码和备份文件，丢失后将无法恢复数据 </template>
@@ -1252,7 +1306,7 @@
             传输记录 ({{ restoreBackupData.transferRecords?.length || 0 }} 条)
           </el-checkbox>
           <el-checkbox label="lockConfig" :disabled="!restoreBackupData.lockConfig">
-            锁定配置 {{ restoreBackupData.lockConfig ? '✓' : '(无)' }}
+            锁定配置 {{ restoreBackupData.lockConfig ? '✓，不含解锁密码' : '(无)' }}
           </el-checkbox>
           <el-checkbox label="quickCommands" :disabled="!restoreBackupData.quickCommands?.length">
             快捷命令 ({{ restoreBackupData.quickCommands?.length || 0 }} 个)
@@ -1261,7 +1315,8 @@
         <el-alert type="info" :closable="false" show-icon style="margin-top: 16px">
           <template #title>
             备份版本: {{ restoreBackupData.version }}<br />
-            备份时间: {{ formatDate(restoreBackupData.timestamp) }}
+            备份时间: {{ formatDate(restoreBackupData.timestamp) }}<br />
+            终端背景附件: {{ restoreBackupData.terminalBackgroundAssets?.length || 0 }} 个
           </template>
         </el-alert>
       </div>
@@ -1332,6 +1387,10 @@ import { themes } from '@/utils/terminal-themes'
 import { applyAppShellTheme } from '@/utils/app-appearance'
 import { keyboardShortcutManager, type ShortcutConfig } from '@/utils/keyboard-shortcuts'
 import {
+  normalizeTerminalBackground,
+  type TerminalBackgroundConfig
+} from '@/types/terminal-background'
+import {
   terminalShortcutsManager,
   type TerminalShortcut,
   type TerminalShortcutsConfig
@@ -1361,7 +1420,7 @@ const currentTheme = ref('dark')
 const appearanceOptions = [
   { label: '现代', value: 'modern' },
   { label: '简洁', value: 'terminal' },
-  { label: '简约', value: 'minimal' }
+  { label: '复古', value: 'minimal' }
 ]
 
 const settings = ref({
@@ -1383,7 +1442,15 @@ const settings = ref({
     scrollback: 10000,
     theme: 'dark',
     rendererType: 'auto' as 'auto' | 'webgl' | 'canvas' | 'dom',
-    copyOnSelect: false
+    copyOnSelect: false,
+    background: {
+      enabled: false,
+      source: 'url' as TerminalBackgroundConfig['source'],
+      image: '',
+      opacity: 18,
+      fit: 'cover' as TerminalBackgroundConfig['fit'],
+      fileName: ''
+    }
   },
   ssh: {
     timeout: 30,
@@ -1665,7 +1732,11 @@ const loadSettings = async () => {
       // 深度合并设置，确保新增的默认值不会丢失
       settings.value = {
         general: { ...settings.value.general, ...saved.general },
-        terminal: { ...settings.value.terminal, ...saved.terminal },
+        terminal: {
+          ...settings.value.terminal,
+          ...saved.terminal,
+          background: normalizeTerminalBackground(saved.terminal?.background)
+        },
         ssh: { ...settings.value.ssh, ...saved.ssh },
         sftp: { ...settings.value.sftp, ...saved.sftp },
         security: { ...settings.value.security, ...saved.security },
@@ -1701,9 +1772,56 @@ const ensureSftpDefaultLocalPath = async () => {
   }
 }
 
+const ensureTerminalBackground = () => {
+  settings.value.terminal.background = normalizeTerminalBackground(
+    settings.value.terminal.background
+  ) as typeof settings.value.terminal.background
+  return settings.value.terminal.background
+}
+
+const handleGlobalBackgroundSourceChange = () => {
+  const background = ensureTerminalBackground()
+  background.image = ''
+  background.fileName = ''
+}
+
+const handleGlobalBackgroundUrlInput = () => {
+  const background = ensureTerminalBackground()
+  background.source = 'url'
+  background.fileName = ''
+  if (background.image) {
+    background.enabled = true
+  }
+}
+
+const selectGlobalTerminalBackgroundImage = async () => {
+  try {
+    const result = await window.electronAPI.terminalBackground.selectImage()
+    if (!result?.success) {
+      ElMessage.error(result?.error || '导入背景图片失败')
+      return
+    }
+    if (!result.data) return
+
+    const background = ensureTerminalBackground()
+    background.enabled = true
+    background.source = 'local'
+    background.image = result.data.image
+    background.fileName = result.data.fileName
+  } catch (error) {
+    console.error('Failed to select terminal background image:', error)
+    ElMessage.error('导入背景图片失败')
+  }
+}
+
+const clearGlobalTerminalBackground = () => {
+  settings.value.terminal.background = normalizeTerminalBackground(null) as typeof settings.value.terminal.background
+}
+
 const saveSettings = async () => {
   try {
     await ensureSftpDefaultLocalPath()
+    ensureTerminalBackground()
 
     // 保存常规设置
     await window.electronAPI.settings.update(toRaw(settings.value))
@@ -3406,6 +3524,52 @@ const testShortcuts = () => {
   margin-left: var(--spacing-sm);
   color: var(--text-tertiary);
   font-size: var(--text-sm);
+}
+
+.terminal-background-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  width: min(520px, 100%);
+}
+
+.terminal-background-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.terminal-background-slider {
+  width: 100%;
+}
+
+.terminal-background-slider .form-hint {
+  display: block;
+  margin: 0 0 4px;
+}
+
+.background-source-group {
+  width: 260px;
+}
+
+.background-source-group :deep(.el-radio-button) {
+  width: 50%;
+}
+
+.background-source-group :deep(.el-radio-button__inner) {
+  width: 100%;
+}
+
+.background-file-name {
+  min-width: 0;
+  flex: 1;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 关于页面 */

@@ -725,6 +725,8 @@ interface TerminalRuntime {
   terminal: XTerm
   fitAddon: FitAddon
   disposables: Array<{ dispose: () => void }>
+  touchScrollHost?: HTMLElement
+  disposeTouchScroll?: () => void
 }
 
 type EditorState =
@@ -1357,12 +1359,107 @@ const createTerminalRuntime = (terminalWindow: TerminalWindow): TerminalRuntime 
 const ensureTerminalRuntime = (terminal: TerminalWindow): TerminalRuntime =>
   terminalRuntimes.get(terminal.id) || createTerminalRuntime(terminal)
 
+const getTerminalTouchLineHeight = (terminal: XTerm) => {
+  const fontSize = typeof terminal.options.fontSize === 'number' ? terminal.options.fontSize : 12
+  const lineHeight = typeof terminal.options.lineHeight === 'number' ? terminal.options.lineHeight : 1
+  return Math.max(8, fontSize * lineHeight)
+}
+
+const attachTerminalTouchScroll = (runtime: TerminalRuntime, host: HTMLElement) => {
+  if (runtime.touchScrollHost === host) return
+
+  runtime.disposeTouchScroll?.()
+
+  let startX = 0
+  let startY = 0
+  let lastY = 0
+  let remainder = 0
+  let isVerticalScroll = false
+
+  const resetTouchScroll = () => {
+    startX = 0
+    startY = 0
+    lastY = 0
+    remainder = 0
+    isVerticalScroll = false
+  }
+
+  const handleTouchStart = (event: TouchEvent) => {
+    if (event.touches.length !== 1) {
+      resetTouchScroll()
+      return
+    }
+    const touch = event.touches[0]
+    startX = touch.clientX
+    startY = touch.clientY
+    lastY = touch.clientY
+    remainder = 0
+    isVerticalScroll = false
+  }
+
+  const handleTouchMove = (event: TouchEvent) => {
+    if (event.touches.length !== 1) {
+      resetTouchScroll()
+      return
+    }
+
+    const touch = event.touches[0]
+    const totalX = touch.clientX - startX
+    const totalY = touch.clientY - startY
+
+    if (!isVerticalScroll) {
+      const absX = Math.abs(totalX)
+      const absY = Math.abs(totalY)
+      if (absX < 6 && absY < 6) return
+      if (absY <= absX * 1.2) {
+        lastY = touch.clientY
+        return
+      }
+      isVerticalScroll = true
+    }
+
+    const deltaY = lastY - touch.clientY
+    lastY = touch.clientY
+    if (deltaY === 0) return
+
+    remainder += deltaY / getTerminalTouchLineHeight(runtime.terminal)
+    const lines = remainder > 0 ? Math.floor(remainder) : Math.ceil(remainder)
+    if (lines !== 0) {
+      runtime.terminal.scrollLines(lines)
+      remainder -= lines
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  const options: AddEventListenerOptions = { capture: true }
+  const moveOptions: AddEventListenerOptions = { capture: true, passive: false }
+  host.addEventListener('touchstart', handleTouchStart, options)
+  host.addEventListener('touchmove', handleTouchMove, moveOptions)
+  host.addEventListener('touchend', resetTouchScroll, options)
+  host.addEventListener('touchcancel', resetTouchScroll, options)
+
+  runtime.touchScrollHost = host
+  runtime.disposeTouchScroll = () => {
+    host.removeEventListener('touchstart', handleTouchStart, options)
+    host.removeEventListener('touchmove', handleTouchMove, moveOptions)
+    host.removeEventListener('touchend', resetTouchScroll, options)
+    host.removeEventListener('touchcancel', resetTouchScroll, options)
+    if (runtime.touchScrollHost === host) {
+      runtime.touchScrollHost = undefined
+      runtime.disposeTouchScroll = undefined
+    }
+  }
+}
+
 const attachTerminalRuntime = (runtime: TerminalRuntime, host: HTMLElement) => {
   if (!runtime.terminal.element) {
     runtime.terminal.open(host)
   } else if (!host.contains(runtime.terminal.element)) {
     host.replaceChildren(runtime.terminal.element)
   }
+  attachTerminalTouchScroll(runtime, host)
   fitTerminalRuntime(runtime)
 }
 
@@ -1427,6 +1524,7 @@ const appendCommandResultOutput = (terminal: TerminalWindow, output: string) => 
 const disposeTerminalRuntime = (id: string) => {
   const runtime = terminalRuntimes.get(id)
   if (!runtime) return
+  runtime.disposeTouchScroll?.()
   runtime.disposables.forEach((disposable) => disposable.dispose())
   runtime.terminal.dispose()
   terminalRuntimes.delete(id)

@@ -218,6 +218,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     showContextMenu: (menuItems: any[]) => ipcRenderer.invoke('dialog:showContextMenu', menuItems)
   },
 
+  terminalBackground: {
+    selectImage: () => ipcRenderer.invoke('terminalBackground:selectImage')
+  },
+
   // Local file system operations
   fs: {
     readDirectory: (dirPath: string) => ipcRenderer.invoke('fs:readDirectory', dirPath),
@@ -816,6 +820,13 @@ export interface ElectronAPI {
     update: (updates: any) => Promise<void>
     reset: () => Promise<void>
     onChange: (callback: (settings: any) => void) => () => void
+  }
+  terminalBackground: {
+    selectImage: () => Promise<{
+      success: boolean
+      data?: { source: 'local'; image: string; fileName: string } | null
+      error?: string
+    }>
   }
   app: {
     getVersion: () => Promise<string>

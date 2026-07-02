@@ -25,6 +25,11 @@ import { registerRDPHandlers } from './ipc/rdp-handlers'
 import { registerVNCHandlers } from './ipc/vnc-handlers'
 import { registerSyncHandlers } from './ipc/sync-handlers'
 import { registerQuickCommandHandlers } from './ipc/quick-command-handlers'
+import {
+  handleTerminalBackgroundProtocol,
+  registerTerminalBackgroundHandlers,
+  registerTerminalBackgroundProtocol
+} from './ipc/terminal-background-handlers'
 import { crashRecoveryManager } from './utils/crash-recovery'
 import { logger } from './utils/logger'
 import { backupManager } from './managers/BackupManager'
@@ -40,6 +45,8 @@ let tray: Tray | null = null
 let isQuitting = false
 const INSTALLER_QUIT_ARG = '--mshell-installer-quit'
 const TRAY_ICON_SIZE = 16
+
+registerTerminalBackgroundProtocol()
 
 const isInstallerQuitRequest = (argv: string[] = process.argv) =>
   argv.some((arg) => arg === INSTALLER_QUIT_ARG)
@@ -120,6 +127,7 @@ registerRDPHandlers()
 registerVNCHandlers()
 registerSyncHandlers()
 registerQuickCommandHandlers()
+registerTerminalBackgroundHandlers()
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -374,6 +382,8 @@ if (gotSingleInstanceLock && isInstallerQuitRequest()) {
 
 if (gotSingleInstanceLock && !isInstallerQuitRequest()) {
   app.whenReady().then(async () => {
+    handleTerminalBackgroundProtocol()
+
     crashRecoveryManager.start()
 
     const crashCheck = crashRecoveryManager.checkForCrash()

@@ -36,6 +36,7 @@
             <div class="settings-list">
               <el-checkbox v-model="toolbarConfig.font" size="small">字体</el-checkbox>
               <el-checkbox v-model="toolbarConfig.theme" size="small">主题</el-checkbox>
+              <el-checkbox v-model="toolbarConfig.background" size="small">背景</el-checkbox>
               <el-checkbox v-model="toolbarConfig.snippet" size="small">Snippets</el-checkbox>
               <el-checkbox v-model="toolbarConfig.search" size="small">搜索</el-checkbox>
               <el-checkbox v-model="toolbarConfig.history" size="small">命令历史</el-checkbox>
@@ -86,6 +87,81 @@
             </template>
           </el-dropdown>
         </el-tooltip>
+
+        <el-popover
+          v-if="toolbarConfig.background"
+          placement="bottom"
+          :width="360"
+          trigger="click"
+          popper-class="terminal-background-popover"
+          @show="syncTerminalBackgroundDraft"
+        >
+          <template #reference>
+            <el-button
+              type="primary"
+              link
+              :icon="Picture"
+              class="action-btn"
+              :class="{ 'is-active': hasTerminalBackgroundOverride }"
+            />
+          </template>
+          <div class="terminal-background-settings">
+            <div class="terminal-background-title">当前终端背景</div>
+            <div class="terminal-background-row">
+              <span>单独配置</span>
+              <el-switch v-model="terminalBackgroundDraft.enabled" />
+            </div>
+            <el-radio-group
+              v-model="terminalBackgroundDraft.source"
+              size="small"
+              class="background-source-tabs"
+              @change="handleTerminalBackgroundSourceChange"
+            >
+              <el-radio-button label="local">上传图片</el-radio-button>
+              <el-radio-button label="url">远程链接</el-radio-button>
+            </el-radio-group>
+            <div v-if="terminalBackgroundDraft.source === 'local'" class="background-local-row">
+              <el-button size="small" @click="selectTerminalBackgroundImage">选择图片</el-button>
+              <span class="background-file-name" :title="terminalBackgroundDraft.fileName || ''">
+                {{ terminalBackgroundDraft.fileName || '未选择图片' }}
+              </span>
+            </div>
+            <el-input
+              v-else
+              v-model="terminalBackgroundDraft.image"
+              size="small"
+              clearable
+              placeholder="https://example.com/background.jpg"
+              @input="handleTerminalBackgroundUrlInput"
+            />
+            <div class="terminal-background-control">
+              <span>图片透明度</span>
+              <el-slider
+                v-model="terminalBackgroundDraft.opacity"
+                :min="0"
+                :max="100"
+                :step="1"
+                show-input
+                size="small"
+              />
+            </div>
+            <div class="terminal-background-control">
+              <span>填充方式</span>
+              <el-select v-model="terminalBackgroundDraft.fit" size="small">
+                <el-option label="覆盖" value="cover" />
+                <el-option label="完整显示" value="contain" />
+                <el-option label="拉伸" value="stretch" />
+              </el-select>
+            </div>
+            <div class="terminal-background-actions">
+              <el-button size="small" @click="removeTerminalBackground">移除背景</el-button>
+              <el-button size="small" @click="clearTerminalBackgroundOverride">继承全局</el-button>
+              <el-button size="small" type="primary" @click="applyTerminalBackgroundOverride">
+                应用
+              </el-button>
+            </div>
+          </div>
+        </el-popover>
 
         <!-- Snippets -->
         <el-tooltip v-if="toolbarConfig.snippet" content="Snippets" placement="bottom">
@@ -240,14 +316,26 @@
           'with-ai': showTerminalAI,
           'with-file': showFilePanel,
           'with-snippet': showSnippetDialog,
-          'with-quick-command': showQuickCommand
+          'with-quick-command': showQuickCommand,
+          'has-terminal-background': hasEffectiveTerminalBackground
         }"
+        :style="terminalContentStyle"
       >
+        <div
+          v-if="hasEffectiveTerminalBackground"
+          class="terminal-background-layer"
+          :style="terminalBackgroundLayerStyle"
+        ></div>
+        <div
+          v-if="hasEffectiveTerminalBackground"
+          class="terminal-background-matte"
+          :style="terminalBackgroundMatteStyle"
+        ></div>
         <TerminalView
           v-if="isConnected"
           :connection-id="connectionId"
           :session-name="session?.name"
-          :options="terminalOptions"
+          :options="effectiveTerminalOptions"
           ref="terminalRef"
           @input="handleTerminalInput"
           @data="handleTerminalData"
@@ -486,7 +574,8 @@ import {
   FolderOpened,
   Promotion,
   Setting,
-  CopyDocument
+  CopyDocument,
+  Picture
 } from '@element-plus/icons-vue'
 import { ElMessage, ElNotification } from 'element-plus'
 import TerminalView from './TerminalView.vue'
@@ -512,6 +601,11 @@ import {
   runWithHostKeyConfirmation
 } from '@/utils/ssh-host-key-confirm'
 import type { SessionConfig as BaseSessionConfig } from '@/types/session'
+import {
+  hasActiveTerminalBackground,
+  normalizeTerminalBackground,
+  type TerminalBackgroundConfig
+} from '@/types/terminal-background'
 import { useAppStore } from '@/stores/app'
 
 // 全局连接跟踪 - 防止重复连接（使用 Map 存储每个 connectionId 的状态，避免模块级 Set 在 HMR 时不清空的问题）
@@ -590,6 +684,7 @@ const showQuickCommand = ref(false)
 const toolbarConfig = ref({
   font: true,
   theme: true,
+  background: true,
   snippet: true,
   search: true,
   history: true,
@@ -690,6 +785,205 @@ const currentSearchOptions = ref({ caseSensitive: false, regex: false })
 // 主题相关
 const availableThemes = themes
 const currentTheme = computed(() => props.terminalOptions?.theme || 'dark')
+
+const createBackgroundDraft = (background?: TerminalBackgroundConfig | null) =>
+  normalizeTerminalBackground(background)
+
+const terminalBackgroundStorageKey = computed(
+  () => `terminal-background:${props.session?.id || props.connectionId}`
+)
+
+const loadStoredTerminalBackground = (): TerminalBackgroundConfig | null => {
+  if (props.session?.terminalBackground) {
+    return normalizeTerminalBackground(props.session.terminalBackground)
+  }
+
+  try {
+    const saved = localStorage.getItem(terminalBackgroundStorageKey.value)
+    return saved ? normalizeTerminalBackground(JSON.parse(saved)) : null
+  } catch (error) {
+    console.error('Failed to load terminal background override:', error)
+    return null
+  }
+}
+
+const terminalBackgroundOverride = ref<TerminalBackgroundConfig | null>(
+  loadStoredTerminalBackground()
+)
+const terminalBackgroundDraft = ref<TerminalBackgroundConfig>(
+  createBackgroundDraft(terminalBackgroundOverride.value || props.terminalOptions?.background)
+)
+
+const globalTerminalBackground = computed(() =>
+  normalizeTerminalBackground(props.terminalOptions?.background)
+)
+const hasTerminalBackgroundOverride = computed(() => terminalBackgroundOverride.value !== null)
+const effectiveTerminalBackground = computed(() =>
+  terminalBackgroundOverride.value
+    ? normalizeTerminalBackground(terminalBackgroundOverride.value)
+    : globalTerminalBackground.value
+)
+const hasEffectiveTerminalBackground = computed(() =>
+  hasActiveTerminalBackground(effectiveTerminalBackground.value)
+)
+const effectiveTerminalOptions = computed(() => ({
+  ...(props.terminalOptions || {}),
+  background: effectiveTerminalBackground.value
+}))
+
+const getBackgroundSize = (fit?: TerminalBackgroundConfig['fit']) => {
+  if (fit === 'stretch') return '100% 100%'
+  return fit || 'cover'
+}
+
+const toCssUrl = (value: string) => `url("${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`
+
+const hexToRgba = (value: string, alpha: number) => {
+  const normalized = value.trim()
+  const shortHex = normalized.match(/^#([0-9a-f]{3})$/i)
+  const longHex = normalized.match(/^#([0-9a-f]{6})$/i)
+  const hex = shortHex
+    ? shortHex[1]
+        .split('')
+        .map((part) => part + part)
+        .join('')
+    : longHex?.[1]
+
+  if (!hex) {
+    return `rgba(13, 17, 23, ${alpha})`
+  }
+
+  const red = parseInt(hex.slice(0, 2), 16)
+  const green = parseInt(hex.slice(2, 4), 16)
+  const blue = parseInt(hex.slice(4, 6), 16)
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`
+}
+
+const terminalBackgroundLayerStyle = computed(() => {
+  const background = effectiveTerminalBackground.value
+
+  return {
+    backgroundImage: background.image ? toCssUrl(background.image) : 'none',
+    backgroundSize: getBackgroundSize(background.fit),
+    backgroundPosition: 'center',
+    backgroundRepeat: 'no-repeat',
+    opacity: String((background.opacity ?? 18) / 100)
+  }
+})
+
+const terminalFallbackBackground = computed(() => {
+  const theme = props.terminalOptions?.theme
+  return typeof theme === 'string'
+    ? themes[theme]?.background || '#0d1117'
+    : theme?.background || '#0d1117'
+})
+
+const terminalBackgroundMatteStyle = computed(() => ({
+  backgroundColor: hexToRgba(terminalFallbackBackground.value, 0.28)
+}))
+
+const terminalContentStyle = computed(() => {
+  return {
+    '--terminal-background-fallback': terminalFallbackBackground.value
+  }
+})
+
+const syncTerminalBackgroundDraft = () => {
+  terminalBackgroundDraft.value = createBackgroundDraft(
+    terminalBackgroundOverride.value || effectiveTerminalBackground.value
+  )
+}
+
+const handleTerminalBackgroundSourceChange = () => {
+  terminalBackgroundDraft.value.image = ''
+  terminalBackgroundDraft.value.fileName = ''
+}
+
+const handleTerminalBackgroundUrlInput = () => {
+  terminalBackgroundDraft.value.source = 'url'
+  terminalBackgroundDraft.value.fileName = ''
+  if (terminalBackgroundDraft.value.image) {
+    terminalBackgroundDraft.value.enabled = true
+  }
+}
+
+const selectTerminalBackgroundImage = async () => {
+  try {
+    const result = await window.electronAPI.terminalBackground.selectImage()
+    if (!result?.success) {
+      ElMessage.error(result?.error || '导入背景图片失败')
+      return
+    }
+    if (!result.data) return
+
+    terminalBackgroundDraft.value = {
+      ...terminalBackgroundDraft.value,
+      enabled: true,
+      source: 'local',
+      image: result.data.image,
+      fileName: result.data.fileName
+    }
+  } catch (error) {
+    console.error('Failed to select terminal background image:', error)
+    ElMessage.error('导入背景图片失败')
+  }
+}
+
+const persistTerminalBackgroundOverride = async (background: TerminalBackgroundConfig | null) => {
+  if (props.session?.id) {
+    await appStore.updateSession(props.session.id, { terminalBackground: background as any })
+    return
+  }
+
+  if (background) {
+    localStorage.setItem(terminalBackgroundStorageKey.value, JSON.stringify(background))
+  } else {
+    localStorage.removeItem(terminalBackgroundStorageKey.value)
+  }
+}
+
+const applyTerminalBackgroundOverride = async () => {
+  try {
+    const background = normalizeTerminalBackground(terminalBackgroundDraft.value)
+    terminalBackgroundOverride.value = background
+    await persistTerminalBackgroundOverride(background)
+    ElMessage.success('当前终端背景已应用')
+  } catch (error) {
+    console.error('Failed to apply terminal background:', error)
+    ElMessage.error('保存当前终端背景失败')
+  }
+}
+
+const removeTerminalBackground = async () => {
+  try {
+    const background = normalizeTerminalBackground({
+      ...terminalBackgroundDraft.value,
+      enabled: false,
+      source: 'url',
+      image: '',
+      fileName: ''
+    })
+    terminalBackgroundOverride.value = background
+    terminalBackgroundDraft.value = createBackgroundDraft(background)
+    await persistTerminalBackgroundOverride(background)
+    ElMessage.success('当前终端背景已移除')
+  } catch (error) {
+    console.error('Failed to remove terminal background:', error)
+    ElMessage.error('移除当前终端背景失败')
+  }
+}
+
+const clearTerminalBackgroundOverride = async () => {
+  try {
+    terminalBackgroundOverride.value = null
+    await persistTerminalBackgroundOverride(null)
+    syncTerminalBackgroundDraft()
+    ElMessage.success('已恢复继承全局终端背景')
+  } catch (error) {
+    console.error('Failed to clear terminal background override:', error)
+    ElMessage.error('清除当前终端背景失败')
+  }
+}
 
 // 字体相关
 const fontOptions = [
@@ -2188,6 +2482,76 @@ defineExpose({
   font-family: serif;
 }
 
+.terminal-background-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.terminal-background-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.terminal-background-row,
+.background-local-row,
+.terminal-background-control,
+.terminal-background-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.terminal-background-row,
+.terminal-background-control {
+  justify-content: space-between;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.terminal-background-control {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.terminal-background-control :deep(.el-slider) {
+  width: 100%;
+}
+
+.terminal-background-control :deep(.el-select) {
+  width: 100%;
+}
+
+.background-source-tabs {
+  width: 100%;
+}
+
+.background-source-tabs :deep(.el-radio-button) {
+  flex: 1;
+}
+
+.background-source-tabs :deep(.el-radio-button__inner) {
+  width: 100%;
+}
+
+.background-file-name {
+  min-width: 0;
+  flex: 1;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-background-actions {
+  justify-content: flex-end;
+  padding-top: 4px;
+  flex-wrap: wrap;
+}
+
 .close-btn:hover {
   background-color: rgba(239, 68, 68, 0.1);
   color: var(--error-color);
@@ -2197,8 +2561,39 @@ defineExpose({
   flex: 1;
   position: relative;
   overflow: hidden;
-  background-color: #0d1117;
+  background-color: var(--terminal-background-fallback, #0d1117);
   transition: all 0.3s ease;
+}
+
+.terminal-content.has-terminal-background {
+  background-color: var(--terminal-background-fallback, #0d1117);
+}
+
+.terminal-background-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.terminal-background-matte {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.terminal-content :deep(.terminal-container),
+.terminal-content .connecting-overlay,
+.terminal-content :deep(.command-autocomplete),
+.terminal-content :deep(.ghost-text),
+.terminal-content :deep(.ai-command-suggest) {
+  position: relative;
+  z-index: 1;
+}
+
+.terminal-content.has-terminal-background :deep(.terminal-container) {
+  background: transparent;
 }
 
 .terminal-content.with-monitor {

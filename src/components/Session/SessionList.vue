@@ -1201,7 +1201,9 @@ const handleSessionDropToGroup = async (sessionId: string, groupId: string) => {
 
 :global(:root.app-appearance-minimal .session-list-header) {
   padding: 12px 12px 10px;
-  background: var(--minimal-shell-panel);
+  background:
+    linear-gradient(180deg, rgba(var(--primary-color-rgb), 0.07), transparent),
+    var(--minimal-shell-panel);
   border-bottom: 1px solid var(--border-strong);
 }
 
@@ -1215,9 +1217,19 @@ const handleSessionDropToGroup = async (sessionId: string, groupId: string) => {
 
 :global(:root.app-appearance-minimal .search-wrapper .el-input__wrapper) {
   height: 32px;
-  background: var(--minimal-terminal-bg) !important;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(var(--primary-color-rgb), 0.018) 0,
+      rgba(var(--primary-color-rgb), 0.018) 1px,
+      transparent 1px,
+      transparent 5px
+    ),
+    var(--minimal-terminal-bg) !important;
   border-radius: 0 !important;
-  box-shadow: 0 0 0 1px var(--border-color) inset !important;
+  box-shadow:
+    0 0 0 1px var(--border-color) inset,
+    inset 2px 2px 0 rgba(0, 0, 0, 0.16) !important;
   font-family: var(--font-mono);
 }
 
@@ -1243,7 +1255,9 @@ const handleSessionDropToGroup = async (sessionId: string, groupId: string) => {
   height: 32px;
   line-height: 32px;
   padding: 0 12px;
-  background: var(--minimal-shell-panel-alt);
+  background:
+    linear-gradient(90deg, rgba(var(--primary-color-rgb), 0.06), transparent),
+    var(--minimal-shell-panel-alt);
   font-family: var(--font-mono);
   font-size: 11px;
   text-transform: uppercase;
@@ -1289,7 +1303,9 @@ const handleSessionDropToGroup = async (sessionId: string, groupId: string) => {
 :global(:root.app-appearance-minimal .session-card:hover) {
   transform: none;
   box-shadow: none;
-  background: var(--minimal-shell-panel-hover);
+  background:
+    linear-gradient(90deg, rgba(var(--primary-color-rgb), 0.08), transparent),
+    var(--minimal-shell-panel-hover);
   border-color: var(--border-medium);
 }
 
@@ -1306,6 +1322,22 @@ const handleSessionDropToGroup = async (sessionId: string, groupId: string) => {
 
 :global(:root.app-appearance-minimal .session-card:hover::before) {
   background: var(--primary-color);
+}
+
+:global(:root.app-appearance-minimal .session-card::after) {
+  content: '';
+  position: absolute;
+  right: 10px;
+  bottom: 6px;
+  left: 44px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(var(--primary-color-rgb), 0.1), transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+:global(:root.app-appearance-minimal .session-card:hover::after) {
+  opacity: 1;
 }
 
 :global(:root.app-appearance-minimal .session-status) {
@@ -1327,7 +1359,9 @@ const handleSessionDropToGroup = async (sessionId: string, groupId: string) => {
   align-self: center;
   border: 1px solid var(--border-color);
   border-radius: 0;
-  background: var(--minimal-shell-active);
+  background:
+    linear-gradient(180deg, rgba(var(--primary-color-rgb), 0.08), transparent),
+    var(--minimal-shell-active);
   color: var(--text-secondary);
 }
 
@@ -1343,6 +1377,12 @@ const handleSessionDropToGroup = async (sessionId: string, groupId: string) => {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0;
+}
+
+:global(:root.app-appearance-minimal .session-name::before) {
+  content: 'Host ';
+  color: var(--text-disabled);
+  font-weight: 500;
 }
 
 :global(:root.app-appearance-minimal .session-details) {

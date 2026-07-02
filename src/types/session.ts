@@ -1,3 +1,5 @@
+import type { TerminalBackgroundConfig } from './terminal-background'
+
 // 会话类型
 export type SessionType = 'ssh' | 'rdp' | 'vnc'
 
@@ -16,6 +18,7 @@ export interface SessionConfig {
   privateKey?: string // For runtime connection use
   passphrase?: string
   portForwards?: any[]
+  terminalBackground?: TerminalBackgroundConfig
   color?: string
   sortOrder?: number // 用于拖拽排序
   // Proxy Jump (跳板机) Configuration

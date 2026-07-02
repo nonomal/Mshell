@@ -1,21 +1,21 @@
 <template>
   <div class="status-bar">
     <div class="status-left">
-      <span class="status-item">
+      <span class="status-item status-item--connections">
         <el-icon><Connection /></el-icon>
         {{ activeConnections }} Active
       </span>
-      <span class="status-item" v-if="currentSession">
+      <span class="status-item status-item--session" v-if="currentSession">
         {{ currentSession.username }}@{{ currentSession.host }}:{{ currentSession.port }}
       </span>
     </div>
     
     <div class="status-right">
-      <span class="status-item" v-if="transferring">
+      <span class="status-item status-item--transfer" v-if="transferring">
         <el-icon class="is-loading"><Loading /></el-icon>
         {{ transferCount }} transfers
       </span>
-      <span class="status-item">
+      <span class="status-item status-item--version">
         {{ displayVersion }}
       </span>
     </div>
@@ -63,13 +63,15 @@ const transferring = computed(() => props.transferCount > 0)
 <style scoped>
 .status-bar {
   height: 24px;
-  background: #007acc;
-  color: #ffffff;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 12px;
   font-size: var(--text-sm);
+  min-width: 0;
 }
 
 .status-left,
@@ -77,15 +79,47 @@ const transferring = computed(() => props.transferCount > 0)
   display: flex;
   align-items: center;
   gap: 16px;
+  min-width: 0;
+}
+
+.status-left {
+  flex: 1;
+  overflow: hidden;
+}
+
+.status-right {
+  flex-shrink: 0;
 }
 
 .status-item {
   display: flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.status-item--connections {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.status-item--session {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-item--transfer {
+  color: var(--warning-color);
+}
+
+.status-item--version {
+  color: var(--text-tertiary);
 }
 
 .status-item .el-icon {
   font-size: var(--text-base);
+  flex-shrink: 0;
 }
 </style>

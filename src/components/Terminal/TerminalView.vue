@@ -1,5 +1,9 @@
 <template>
-  <div ref="terminalContainer" class="terminal-container"></div>
+  <div
+    ref="terminalContainer"
+    class="terminal-container"
+    :class="{ 'has-background-image': hasBackgroundImage }"
+  ></div>
 </template>
 
 <script setup lang="ts">
@@ -12,6 +16,10 @@ import { terminalShortcutsManager } from '@/utils/terminal-shortcuts'
 import { useAIStore } from '@/stores/ai'
 import { useAppStore } from '@/stores/app'
 import { ElMessage } from 'element-plus'
+import {
+  hasActiveTerminalBackground,
+  type TerminalBackgroundConfig
+} from '@/types/terminal-background'
 import 'xterm/css/xterm.css'
 
 interface TerminalOptions {
@@ -23,6 +31,7 @@ interface TerminalOptions {
   scrollback?: number
   rendererType?: 'auto' | 'dom' | 'canvas' | 'webgl'
   copyOnSelect?: boolean
+  background?: TerminalBackgroundConfig
 }
 
 interface Props {
@@ -61,6 +70,7 @@ const isActiveTerminal = computed(() => appStore.activeTab === props.connectionI
 const isVisibleActiveTerminal = computed(
   () => appStore.activeView === 'sessions' && isActiveTerminal.value
 )
+const hasBackgroundImage = computed(() => hasActiveTerminalBackground(props.options.background))
 
 const terminalContainer = ref<HTMLElement>()
 let terminal: Terminal | null = null
@@ -74,6 +84,20 @@ let scheduledFitTimers: ReturnType<typeof setTimeout>[] = []
 
 const normalizeDataForRemote = (data: string) => (data === '\b' ? '\x7F' : data)
 const removeLastInputCharacter = (value: string) => Array.from(value).slice(0, -1).join('')
+
+const resolveTerminalTheme = (options: TerminalOptions) => {
+  const theme =
+    typeof options.theme === 'string' ? getTheme(options.theme) : options.theme || getTheme('dark')
+
+  if (!hasActiveTerminalBackground(options.background)) {
+    return theme
+  }
+
+  return {
+    ...theme,
+    background: 'rgba(0, 0, 0, 0)'
+  }
+}
 
 const hasUsableTerminalSize = () => {
   if (!terminalContainer.value) return false
@@ -133,13 +157,14 @@ onMounted(() => {
     console.error('Failed to load AI config:', err)
   })
 
-  const theme =
-    typeof props.options.theme === 'string'
-      ? getTheme(props.options.theme)
-      : props.options.theme || getTheme('dark')
+  const theme = resolveTerminalTheme(props.options)
 
   // 使用全局管理器获取或创建终端实例
   const instance = terminalManager.getOrCreate(props.connectionId, terminalContainer.value, {
+    ...props.options,
+    theme
+  })
+  terminalManager.setRendererMode(props.connectionId, {
     ...props.options,
     theme
   })
@@ -613,8 +638,14 @@ watch(
       terminal.options.scrollback = newOptions.scrollback
     }
     if (newOptions.theme) {
-      terminal.options.theme =
-        typeof newOptions.theme === 'string' ? getTheme(newOptions.theme) : newOptions.theme
+      const theme = resolveTerminalTheme(newOptions)
+      terminal.options.theme = theme
+      terminalManager.setRendererMode(props.connectionId, {
+        ...newOptions,
+        theme
+      })
+    } else {
+      terminalManager.setRendererMode(props.connectionId, newOptions)
     }
 
     // 更新选中自动复制设置
@@ -723,6 +754,18 @@ defineExpose({
 
 .terminal-container :deep(.xterm-viewport) {
   overflow-y: auto;
+}
+
+.terminal-container.has-background-image,
+.terminal-container.has-background-image :deep(.xterm),
+.terminal-container.has-background-image :deep(.xterm-screen),
+.terminal-container.has-background-image :deep(.xterm-viewport),
+.terminal-container.has-background-image :deep(.xterm-scroll-area) {
+  background: transparent !important;
+}
+
+.terminal-container.has-background-image :deep(.xterm-screen canvas) {
+  background: transparent !important;
 }
 
 /* 搜索高亮样式 */

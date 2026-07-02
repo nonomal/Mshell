@@ -1,6 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { app } from 'electron'
+import type { TerminalBackgroundConfig } from '../../src/types/terminal-background'
 
 // 快捷键配置
 export interface ShortcutConfig {
@@ -39,6 +40,7 @@ export interface AppSettings {
     cursorBlink: boolean
     rendererType: 'auto' | 'webgl' | 'canvas' | 'dom'
     copyOnSelect?: boolean
+    background?: TerminalBackgroundConfig
   }
   sftp: {
     maxConcurrentTransfers: number
@@ -105,7 +107,14 @@ class AppSettingsManager {
         cursorStyle: 'block',
         cursorBlink: true,
         rendererType: 'auto',
-        copyOnSelect: false
+        copyOnSelect: false,
+        background: {
+          enabled: false,
+          source: 'url',
+          image: '',
+          opacity: 18,
+          fit: 'cover'
+        }
       },
       sftp: {
         maxConcurrentTransfers: 3,
@@ -169,7 +178,14 @@ class AppSettingsManager {
           ...this.settings,
           ...loaded,
           general: { ...this.settings.general, ...loaded.general },
-          terminal: { ...this.settings.terminal, ...loaded.terminal },
+          terminal: {
+            ...this.settings.terminal,
+            ...loaded.terminal,
+            background: {
+              ...this.settings.terminal.background,
+              ...loaded.terminal?.background
+            }
+          },
           sftp: { ...this.settings.sftp, ...loaded.sftp },
           ssh: { ...this.settings.ssh, ...loaded.ssh },
           security: { ...this.settings.security, ...loaded.security },
@@ -204,7 +220,14 @@ class AppSettingsManager {
       ...this.settings,
       ...updates,
       general: { ...this.settings.general, ...updates.general },
-      terminal: { ...this.settings.terminal, ...updates.terminal },
+      terminal: {
+        ...this.settings.terminal,
+        ...updates.terminal,
+        background: {
+          ...this.settings.terminal.background,
+          ...updates.terminal?.background
+        }
+      },
       sftp: { ...this.settings.sftp, ...updates.sftp },
       ssh: { ...this.settings.ssh, ...updates.ssh },
       security: { ...this.settings.security, ...updates.security },

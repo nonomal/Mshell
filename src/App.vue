@@ -1737,7 +1737,9 @@ body,
 }
 
 :global(:root.app-appearance-minimal .app-layout) {
-  background: var(--bg-main);
+  background:
+    linear-gradient(180deg, rgba(var(--primary-color-rgb), 0.025), transparent 180px),
+    var(--bg-main);
 }
 
 :global(:root.app-appearance-minimal .app-header) {
@@ -1745,9 +1747,13 @@ body,
   padding: 0 12px;
   position: relative;
   justify-content: space-between;
-  background: var(--minimal-shell-header);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent),
+    var(--minimal-shell-header);
   border-bottom: 1px solid var(--border-strong);
-  box-shadow: none;
+  box-shadow:
+    inset 0 -1px 0 rgba(var(--primary-color-rgb), 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
   font-family: var(--font-mono);
 }
 
@@ -1758,9 +1764,9 @@ body,
 }
 
 :global(:root.app-appearance-minimal .app-title-drag::before) {
-  content: 'local$ ssh workspace';
+  content: 'MSHELL RETRO // SSH CONSOLE';
   overflow: hidden;
-  color: var(--text-secondary);
+  color: var(--primary-color);
   font-size: 12px;
   font-weight: 600;
   text-overflow: ellipsis;
@@ -1768,11 +1774,11 @@ body,
 }
 
 :global(:root.app-appearance-minimal .app-title-drag::after) {
-  content: 'connected sessions ready';
+  content: 'READY';
   margin-left: 14px;
   padding-left: 14px;
   border-left: 1px solid var(--border-color);
-  color: var(--text-disabled);
+  color: var(--accent-color);
   font-size: 11px;
   font-weight: 500;
 }
@@ -1787,7 +1793,9 @@ body,
   height: 28px;
   min-height: 28px;
   border-radius: 0;
-  background: var(--minimal-shell-panel-alt);
+  background:
+    linear-gradient(180deg, rgba(var(--primary-color-rgb), 0.075), transparent),
+    var(--minimal-shell-panel-alt);
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
 }
@@ -1800,7 +1808,7 @@ body,
 }
 
 :global(:root.app-appearance-minimal .app-header .header-actions .el-button--primary) {
-  background: var(--primary-color);
+  background: linear-gradient(180deg, var(--primary-hover), var(--primary-color));
   border-color: var(--primary-color);
   color: var(--text-inverse);
 }
@@ -1808,9 +1816,11 @@ body,
 :global(:root.app-appearance-minimal .sessions-panel) {
   width: 332px;
   min-width: 332px;
-  background: var(--minimal-shell-panel);
+  background:
+    linear-gradient(180deg, rgba(var(--primary-color-rgb), 0.045), transparent 240px),
+    var(--minimal-shell-panel);
   border-right: 1px solid var(--border-strong);
-  box-shadow: none;
+  box-shadow: inset -1px 0 0 rgba(var(--primary-color-rgb), 0.06);
 }
 
 :global(:root.app-appearance-minimal .session-panel-toggle) {
@@ -1845,7 +1855,9 @@ body,
 
 :global(:root.app-appearance-minimal .premium-tabs .el-tabs__header) {
   padding: 0 0 0 8px;
-  background: var(--minimal-shell-bg);
+  background:
+    linear-gradient(90deg, rgba(var(--primary-color-rgb), 0.045), transparent 70%),
+    var(--minimal-shell-bg);
   border-bottom: 1px solid var(--border-strong);
 }
 
@@ -1867,7 +1879,7 @@ body,
 }
 
 :global(:root.app-appearance-minimal .premium-tabs .el-tabs__item::after) {
-  content: '$';
+  content: '·';
   margin-left: 8px;
   color: var(--text-disabled);
   font-size: 11px;
@@ -1894,11 +1906,15 @@ body,
 }
 
 :global(:root.app-appearance-minimal .premium-tabs .el-tabs__item.is-active) {
-  background: var(--minimal-shell-active);
+  background:
+    linear-gradient(180deg, rgba(var(--primary-color-rgb), 0.1), transparent),
+    var(--minimal-shell-active);
   border-color: var(--border-strong) !important;
   color: var(--primary-color);
   font-weight: 600;
-  box-shadow: inset 0 2px 0 var(--primary-color);
+  box-shadow:
+    inset 0 2px 0 var(--primary-color),
+    inset 0 0 0 1px rgba(var(--primary-color-rgb), 0.05);
 }
 
 :global(:root.app-appearance-minimal .premium-tabs .el-tabs__item::before) {
@@ -1923,7 +1939,15 @@ body,
   width: 72px;
   height: 72px;
   border-radius: 0;
-  background: var(--bg-secondary);
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(var(--primary-color-rgb), 0.025) 0,
+      rgba(var(--primary-color-rgb), 0.025) 1px,
+      transparent 1px,
+      transparent 5px
+    ),
+    var(--bg-secondary);
   border: 1px solid var(--border-color);
   box-shadow: none;
 }
@@ -1937,7 +1961,9 @@ body,
 :global(:root.app-appearance-minimal .split-toolbar) {
   min-height: 38px;
   padding: 5px 10px;
-  background: var(--minimal-shell-bg);
+  background:
+    linear-gradient(90deg, rgba(var(--primary-color-rgb), 0.045), transparent 70%),
+    var(--minimal-shell-bg);
   border-bottom: 1px solid var(--border-strong);
   font-family: var(--font-mono);
 }

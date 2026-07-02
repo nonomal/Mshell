@@ -10,6 +10,7 @@ import type {
   RDPOptions,
   VNCOptions
 } from '../../src/types/session'
+import type { TerminalBackgroundConfig } from '../../src/types/terminal-background'
 import { appSettingsManager } from '../utils/app-settings'
 
 export interface SessionConfig {
@@ -26,6 +27,7 @@ export interface SessionConfig {
   privateKeyPath?: string
   passphrase?: string
   portForwards?: any[]
+  terminalBackground?: TerminalBackgroundConfig
   color?: string
   sortOrder?: number // 用于拖拽排序
   // 跳板机配置
@@ -56,6 +58,9 @@ export interface SessionGroup {
   name: string
   sessions: string[]
 }
+
+type SessionCreateConfig = Omit<SessionConfig, 'id' | 'createdAt' | 'updatedAt'> &
+  Partial<Pick<SessionConfig, 'id' | 'createdAt' | 'updatedAt'>>
 
 /**
  * SessionManager - 管理会话配置的 CRUD 操作
@@ -292,6 +297,17 @@ export class SessionManager {
     return sanitized
   }
 
+  private parseSessionDate(value: unknown, fallback: Date): Date {
+    if (!value) return fallback
+
+    const date =
+      value instanceof Date || typeof value === 'string' || typeof value === 'number'
+        ? new Date(value)
+        : null
+
+    return date && !Number.isNaN(date.getTime()) ? date : fallback
+  }
+
   private clearStoredSecrets(): void {
     for (const [id, session] of this.sessions.entries()) {
       this.sessions.set(id, this.sanitizeSavedSecrets(session) as SessionConfig)
@@ -331,7 +347,7 @@ export class SessionManager {
   /**
    * 创建新会话
    */
-  async createSession(config: Omit<SessionConfig, 'id' | 'createdAt' | 'updatedAt'>): Promise<SessionConfig> {
+  async createSession(config: SessionCreateConfig): Promise<SessionConfig> {
     config = this.sanitizeSavedSecrets(config)
 
     // 如果没有指定地区，尝试根据Host自动检测
@@ -345,11 +361,15 @@ export class SessionManager {
     }
 
     const now = new Date()
+    const restoredId =
+      typeof config.id === 'string' && config.id.trim() && !this.sessions.has(config.id)
+        ? config.id
+        : undefined
     const newSession: SessionConfig = {
       ...config,
-      id: uuidv4(),
-      createdAt: now,
-      updatedAt: now
+      id: restoredId || uuidv4(),
+      createdAt: this.parseSessionDate(config.createdAt, now),
+      updatedAt: this.parseSessionDate(config.updatedAt, now)
     }
 
     this.sessions.set(newSession.id, newSession)

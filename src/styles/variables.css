@@ -326,30 +326,30 @@
   --el-font-size-extra-small: var(--text-xs);
 }
 
-/* 简约外观：接近原生 SSH 客户端，弱装饰、高可读、终端优先 */
+/* 复古外观：老式终端控制台，低饱和底色、琥珀/荧光绿状态、高对比单像素边框 */
 :root.app-appearance-minimal {
-  --primary-color: #8fb4ff;
-  --primary-color-rgb: 143, 180, 255;
-  --primary-hover: #a8c4ff;
-  --primary-light: #c7d8ff;
-  --accent-color: #78d6c6;
-  --accent-hover: #93eadc;
-  --terminal-warn: #d6b76e;
-  --terminal-line: rgba(143, 180, 255, 0.28);
+  --primary-color: #b98a52;
+  --primary-color-rgb: 185, 138, 82;
+  --primary-hover: #c99c65;
+  --primary-light: #d9b981;
+  --accent-color: #7eb08a;
+  --accent-hover: #93c19c;
+  --terminal-warn: #c79b63;
+  --terminal-line: rgba(185, 138, 82, 0.24);
 
-  --bg-main: #0b0d10;
+  --bg-main: #11110e;
   --bg-primary: var(--bg-main);
-  --bg-secondary: #111418;
-  --bg-tertiary: #171b20;
-  --bg-elevated: #1b2026;
-  --bg-hover: #20262d;
-  --minimal-shell-bg: #0b0d10;
-  --minimal-shell-header: #080a0d;
-  --minimal-shell-panel: #0d1014;
-  --minimal-shell-panel-alt: #10141a;
-  --minimal-shell-panel-hover: #151a21;
-  --minimal-shell-active: #11161c;
-  --minimal-terminal-bg: #07090b;
+  --bg-secondary: #181713;
+  --bg-tertiary: #211f19;
+  --bg-elevated: #27241d;
+  --bg-hover: #2c291f;
+  --minimal-shell-bg: #0d0d0b;
+  --minimal-shell-header: #171612;
+  --minimal-shell-panel: #13120f;
+  --minimal-shell-panel-alt: #1c1a15;
+  --minimal-shell-panel-hover: #262319;
+  --minimal-shell-active: #282014;
+  --minimal-terminal-bg: #0a0b09;
 
   --glass-bg: var(--bg-secondary);
   --glass-bg-light: var(--bg-tertiary);
@@ -357,16 +357,16 @@
   --glass-border-hover: var(--border-medium);
   --glass-blur: 0px;
 
-  --text-primary: #e6edf3;
-  --text-secondary: #b7c1cd;
-  --text-tertiary: #7f8b99;
-  --text-disabled: #56616f;
-  --text-inverse: #080a0d;
+  --text-primary: #ded6c2;
+  --text-secondary: #bdb39c;
+  --text-tertiary: #8b826f;
+  --text-disabled: #5e574b;
+  --text-inverse: #17120c;
 
-  --border-color: #2a3038;
-  --border-light: rgba(230, 237, 243, 0.06);
-  --border-medium: #3a4350;
-  --border-strong: #4a5563;
+  --border-color: #373124;
+  --border-light: rgba(222, 214, 194, 0.06);
+  --border-medium: #514633;
+  --border-strong: #66583d;
 
   --shadow-sm: none;
   --shadow-md: none;
@@ -407,42 +407,42 @@
 }
 
 :root.light-theme.app-appearance-minimal {
-  --primary-color: #255eb8;
-  --primary-color-rgb: 37, 94, 184;
-  --primary-hover: #1d4f9d;
-  --primary-light: #4279d7;
-  --accent-color: #047481;
-  --accent-hover: #075e68;
-  --terminal-warn: #8a6500;
-  --terminal-line: rgba(37, 94, 184, 0.24);
+  --primary-color: #765735;
+  --primary-color-rgb: 118, 87, 53;
+  --primary-hover: #654929;
+  --primary-light: #9a7447;
+  --accent-color: #4f7d61;
+  --accent-hover: #3f684f;
+  --terminal-warn: #8a673b;
+  --terminal-line: rgba(118, 87, 53, 0.2);
 
-  --bg-main: #f3f5f7;
+  --bg-main: #e7e0d2;
   --bg-primary: var(--bg-main);
-  --bg-secondary: #ffffff;
-  --bg-tertiary: #e9edf2;
-  --bg-elevated: #ffffff;
-  --bg-hover: #dde4ec;
-  --minimal-shell-bg: #f6f8fb;
-  --minimal-shell-header: #eef2f7;
-  --minimal-shell-panel: #ffffff;
-  --minimal-shell-panel-alt: #edf2f7;
-  --minimal-shell-panel-hover: #e4ebf3;
-  --minimal-shell-active: #eaf2ff;
-  --minimal-terminal-bg: #ffffff;
+  --bg-secondary: #f4eedf;
+  --bg-tertiary: #ded4bf;
+  --bg-elevated: #faf4e7;
+  --bg-hover: #d8cbb4;
+  --minimal-shell-bg: #d6ccb8;
+  --minimal-shell-header: #c8baa1;
+  --minimal-shell-panel: #f0eadb;
+  --minimal-shell-panel-alt: #ddd3bf;
+  --minimal-shell-panel-hover: #d2c4ab;
+  --minimal-shell-active: #e6d7b8;
+  --minimal-terminal-bg: #faf4e7;
 
   --glass-bg: var(--bg-secondary);
   --glass-bg-light: var(--bg-tertiary);
   --glass-border: var(--border-color);
   --glass-border-hover: var(--border-medium);
 
-  --text-primary: #111827;
-  --text-secondary: #3f4a5a;
-  --text-tertiary: #6b7280;
-  --text-disabled: #9aa3af;
-  --text-inverse: #ffffff;
+  --text-primary: #2b261d;
+  --text-secondary: #594f3f;
+  --text-tertiary: #7d715e;
+  --text-disabled: #a0937e;
+  --text-inverse: #f7f1e4;
 
-  --border-color: #c9d1dc;
-  --border-light: rgba(17, 24, 39, 0.06);
-  --border-medium: #aeb8c6;
-  --border-strong: #8f9bad;
+  --border-color: #bcae94;
+  --border-light: rgba(43, 38, 29, 0.06);
+  --border-medium: #9e8d70;
+  --border-strong: #7f6e53;
 }

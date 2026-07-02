@@ -45,6 +45,9 @@ export interface TrafficStats {
   startTime: string
 }
 
+type PortForwardCreateData = Omit<PortForward, 'id' | 'createdAt' | 'updatedAt' | 'status'> &
+  Partial<Pick<PortForward, 'id' | 'createdAt' | 'updatedAt' | 'status'>>
+
 /**
  * PortForwardConfigManager - 管理端口转发配置持久化
  */
@@ -56,14 +59,14 @@ class PortForwardConfigManager extends BaseManager<PortForward> {
   /**
    * 创建端口转发配置
    */
-  async createForward(data: Omit<PortForward, 'id' | 'createdAt' | 'updatedAt' | 'status'>): Promise<PortForward> {
+  async createForward(data: PortForwardCreateData): Promise<PortForward> {
     const now = new Date().toISOString()
     const forward: PortForward = {
       ...data,
-      id: `forward-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      status: 'inactive',
-      createdAt: now,
-      updatedAt: now
+      id: data.id || `forward-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      status: data.status === 'active' ? 'inactive' : data.status || 'inactive',
+      createdAt: data.createdAt || now,
+      updatedAt: data.updatedAt || now
     }
     return await this.create(forward)
   }
@@ -210,7 +213,7 @@ export class PortForwardManager extends EventEmitter {
   /**
    * 添加转发配置 (不启动)
    */
-  async addForward(forward: Omit<PortForward, 'id' | 'createdAt' | 'updatedAt' | 'status'>): Promise<PortForward> {
+  async addForward(forward: PortForwardCreateData): Promise<PortForward> {
     const created = await this.configManager.createForward(forward)
     this.forwards.set(created.id, created)
     return created
