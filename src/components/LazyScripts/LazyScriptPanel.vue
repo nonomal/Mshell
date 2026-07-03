@@ -90,7 +90,7 @@
             <div class="title-icon">
               <el-icon><MagicStick /></el-icon>
             </div>
-            <div>
+            <div class="detail-title-content">
               <h3>{{ selectedScript.name }}</h3>
               <p>{{ selectedScript.description || '没有描述' }}</p>
             </div>
@@ -101,7 +101,14 @@
               <el-button :icon="Edit" circle @click="openEditor(selectedScript)" />
             </el-tooltip>
             <el-tooltip content="删除" placement="bottom">
-              <el-button :icon="Delete" circle type="danger" plain @click="deleteScript(selectedScript)" />
+              <el-button
+                class="detail-delete-button"
+                :icon="Delete"
+                circle
+                type="danger"
+                plain
+                @click="deleteScript(selectedScript)"
+              />
             </el-tooltip>
           </div>
         </header>
@@ -185,8 +192,37 @@
 
         <section v-if="selectedScript.variables.length" class="variables-section">
           <div class="section-title">
-            <span>变量</span>
-            <small>部署前替换到脚本文件内容</small>
+            <div class="section-title-main">
+              <span>变量</span>
+              <small>部署前替换到脚本文件内容</small>
+            </div>
+            <el-button
+              v-if="showFirewallPortGuideButton"
+              class="variable-help-button"
+              :icon="QuestionFilled"
+              size="small"
+              @click="showFirewallPortGuide = true"
+            >
+              填写规则
+            </el-button>
+          </div>
+          <div v-if="showFirewallPortGuideButton" class="firewall-port-presets">
+            <div class="firewall-port-presets-head">
+              <span>常用端口</span>
+              <small>点击后只填入端口和协议，来源 IP/IP 段保持不变</small>
+            </div>
+            <div class="firewall-port-preset-list">
+              <button
+                v-for="preset in firewallPortPresets"
+                :key="preset.title"
+                type="button"
+                class="firewall-port-preset"
+                @click="applyFirewallPortPreset(preset)"
+              >
+                <span>{{ preset.title }}</span>
+                <code>{{ preset.ports }} / {{ preset.protocol.join('+') }}</code>
+              </button>
+            </div>
           </div>
           <div class="variable-grid">
             <div
@@ -652,6 +688,46 @@ echo "当前用户: $TARGET_USER"</code></pre>
     </el-dialog>
 
     <el-dialog
+      v-model="showFirewallPortGuide"
+      title="放行防火墙端口填写说明"
+      width="760px"
+      class="lazy-script-firewall-guide-dialog"
+    >
+      <div class="firewall-guide">
+        <section class="guide-section">
+          <h3>填写格式</h3>
+          <div class="firewall-guide-grid">
+            <div>
+              <strong>端口</strong>
+              <p>支持单个或多个端口，例如 <code>22</code>、<code>22,80,443</code>。填写 <code>*</code>、<code>any</code> 或 <code>all</code> 表示全部端口。</p>
+            </div>
+            <div>
+              <strong>协议</strong>
+              <p>可以勾选 <code>tcp</code>、<code>udp</code>，也可以两个同时勾选。</p>
+            </div>
+            <div>
+              <strong>来源 IP/IP 段</strong>
+              <p>支持 <code>any</code>、单个 IP、多个 IP、CIDR 段。多个来源可用逗号、空格或换行分隔。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="guide-section">
+          <h3>风险提醒</h3>
+          <ul>
+            <li><code>来源=any</code> 表示任意来源，适合公开 Web 服务，但不建议用于管理端口。</li>
+            <li><code>端口=*</code> 会放行全部端口，建议只配合明确的来源 IP/IP 段使用。</li>
+            <li>云服务器还可能有安全组，脚本只能修改系统内防火墙，安全组仍需在云平台放行。</li>
+          </ul>
+        </section>
+      </div>
+
+      <template #footer>
+        <el-button @click="showFirewallPortGuide = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="showTargetTerminalDialog"
       title="确认目标终端"
       width="560px"
@@ -768,6 +844,13 @@ interface VariableOptionItem {
   group: string
 }
 
+interface FirewallPortPreset {
+  title: string
+  description: string
+  ports: string
+  protocol: string[]
+}
+
 interface SSHKey {
   id: string
   name: string
@@ -790,6 +873,7 @@ const saving = ref(false)
 const executingScript = ref(false)
 const showEditor = ref(false)
 const showUsageGuide = ref(false)
+const showFirewallPortGuide = ref(false)
 const showTargetTerminalDialog = ref(false)
 const editingScriptId = ref('')
 const sshKeys = ref<SSHKey[]>([])
@@ -877,6 +961,67 @@ const selectedSshKey = computed(
 const availableKeyBits = computed(() =>
   generateKeyForm.type === 'ecdsa' ? [256, 384, 521] : [2048, 3072, 4096]
 )
+const showFirewallPortGuideButton = computed(() => {
+  const script = selectedScript.value
+  if (!script) return false
+  const variableNames = new Set(script.variables.map((variable) => variable.name))
+  return (
+    script.fileName === 'allow-firewall-port.sh' ||
+    script.name === '放行防火墙端口' ||
+    (variableNames.has('ports') && variableNames.has('protocol') && variableNames.has('sources'))
+  )
+})
+
+const firewallPortPresets: FirewallPortPreset[] = [
+  {
+    title: 'Web + SSH',
+    description: 'SSH、HTTP、HTTPS',
+    ports: '22,80,443',
+    protocol: ['tcp']
+  },
+  {
+    title: 'SSH',
+    description: '远程登录',
+    ports: '22',
+    protocol: ['tcp']
+  },
+  {
+    title: 'Web',
+    description: 'HTTP、HTTPS',
+    ports: '80,443',
+    protocol: ['tcp']
+  },
+  {
+    title: 'DNS',
+    description: 'TCP/UDP 53',
+    ports: '53',
+    protocol: ['tcp', 'udp']
+  },
+  {
+    title: '邮件',
+    description: 'SMTP/IMAP/POP3',
+    ports: '25,465,587,110,995,143,993',
+    protocol: ['tcp']
+  },
+  {
+    title: '数据库',
+    description: 'MySQL/PostgreSQL/Redis',
+    ports: '3306,5432,6379',
+    protocol: ['tcp']
+  },
+  {
+    title: '面板',
+    description: '常见运维面板',
+    ports: '8888,8080,8443',
+    protocol: ['tcp']
+  },
+  {
+    title: '全部端口',
+    description: '需配合明确来源',
+    ports: '*',
+    protocol: ['tcp', 'udp']
+  }
+]
 
 const categoryItems = computed(() => {
   const counts = new Map<string, number>()
@@ -928,6 +1073,9 @@ const renderedContent = computed(() => {
 watch(selectedScript, (script) => {
   resetExecutionValues(script)
   selectedSshKeyId.value = ''
+  if (!showFirewallPortGuideButton.value) {
+    showFirewallPortGuide.value = false
+  }
   if (script?.variables.some((variable) => variable.name === 'public_key')) {
     loadSshKeys(false)
   }
@@ -1003,6 +1151,12 @@ const resetExecutionValues = (script: LazyScript | null) => {
 const syncNumberVariable = (name: string) => {
   const value = numberExecutionValues[name]
   executionValues[name] = value === undefined || value === null ? '' : String(value)
+}
+
+const applyFirewallPortPreset = (preset: FirewallPortPreset) => {
+  executionValues.ports = preset.ports
+  executionValues.protocol = [...preset.protocol]
+  ElMessage.success('已填入常用端口，来源 IP/IP 段请按实际情况确认')
 }
 
 const loadSshKeys = async (showError: boolean | Event = true) => {
@@ -2017,7 +2171,13 @@ const toTerminalLineEndings = (value: string) =>
   padding: 22px;
 }
 
-.detail-header,
+.detail-header {
+  display: grid;
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+}
+
 .run-bar {
   display: flex;
   align-items: center;
@@ -2030,6 +2190,10 @@ const toTerminalLineEndings = (value: string) =>
   min-width: 0;
   align-items: center;
   gap: 12px;
+}
+
+.detail-title-content {
+  min-width: 0;
 }
 
 .title-icon {
@@ -2065,6 +2229,34 @@ const toTerminalLineEndings = (value: string) =>
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
+}
+
+.detail-actions :deep(.el-button) {
+  width: 34px;
+  height: 34px;
+  margin-left: 0;
+}
+
+.detail-actions :deep(.detail-delete-button) {
+  --el-button-bg-color: color-mix(in srgb, var(--danger-color) 10%, var(--bg-primary));
+  --el-button-border-color: color-mix(in srgb, var(--danger-color) 36%, transparent);
+  --el-button-text-color: var(--danger-color);
+  --el-button-hover-bg-color: color-mix(in srgb, var(--danger-color) 16%, var(--bg-primary));
+  --el-button-hover-border-color: var(--danger-color);
+  --el-button-hover-text-color: var(--danger-color);
+  --el-button-active-bg-color: color-mix(in srgb, var(--danger-color) 20%, var(--bg-primary));
+  --el-button-active-border-color: var(--danger-color);
+  --el-button-active-text-color: var(--danger-color);
+  border-color: color-mix(in srgb, var(--danger-color) 36%, transparent);
+  background: color-mix(in srgb, var(--danger-color) 10%, var(--bg-primary));
+  color: var(--danger-color);
+}
+
+.detail-actions :deep(.detail-delete-button:hover),
+.detail-actions :deep(.detail-delete-button:focus-visible) {
+  border-color: var(--danger-color);
+  background: color-mix(in srgb, var(--danger-color) 16%, var(--bg-primary));
+  color: var(--danger-color);
 }
 
 .run-actions {
@@ -2176,15 +2368,111 @@ const toTerminalLineEndings = (value: string) =>
 
 .section-title {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 12px;
 }
 
-.section-title span {
+.section-title-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.section-title > span,
+.section-title-main > span {
   font-size: 14px;
   font-weight: 700;
+}
+
+.section-title > small,
+.section-title-main > small {
+  color: var(--text-secondary);
+}
+
+.variable-help-button {
+  flex: 0 0 auto;
+}
+
+.firewall-port-presets {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-primary) 72%, transparent);
+}
+
+.firewall-port-presets-head {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.firewall-port-presets-head span {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.firewall-port-presets-head small {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.firewall-port-preset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.firewall-port-preset {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 12px;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.firewall-port-preset:hover {
+  border-color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 9%, var(--bg-secondary));
+  color: var(--text-primary);
+}
+
+.firewall-port-preset span {
+  flex: 0 0 auto;
+  font-weight: 700;
+}
+
+.firewall-port-preset code {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .variable-grid {
@@ -2543,6 +2831,37 @@ const toTerminalLineEndings = (value: string) =>
   font-size: 13px;
 }
 
+.firewall-guide {
+  display: flex;
+  max-height: 68vh;
+  flex-direction: column;
+  gap: 16px;
+  overflow: auto;
+  padding-right: 6px;
+}
+
+.firewall-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.firewall-guide-grid > div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+}
+
+.firewall-guide-grid strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .target-terminal-panel {
   display: flex;
   flex-direction: column;
@@ -2627,6 +2946,17 @@ const toTerminalLineEndings = (value: string) =>
   white-space: nowrap;
 }
 
+@container lazy-detail (max-width: 520px) {
+  .detail-header {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .detail-actions {
+    justify-content: flex-start;
+  }
+}
+
 :global(:root.app-appearance-terminal .lazy-script-panel) {
   grid-template-columns: 190px minmax(240px, 330px) minmax(0, 1fr);
 }
@@ -2699,6 +3029,14 @@ const toTerminalLineEndings = (value: string) =>
     flex-direction: column;
   }
 
+  .detail-header {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-actions {
+    justify-content: flex-start;
+  }
+
   .run-actions {
     width: 100%;
     flex-wrap: wrap;
@@ -2722,6 +3060,7 @@ const toTerminalLineEndings = (value: string) =>
   .form-grid.two,
   .form-grid.three,
   .guide-grid,
+  .firewall-guide-grid,
   .variable-row {
     grid-template-columns: 1fr;
   }
@@ -2807,6 +3146,14 @@ const toTerminalLineEndings = (value: string) =>
     flex-direction: column;
   }
 
+  .detail-header {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-actions {
+    justify-content: flex-start;
+  }
+
   .run-actions {
     width: 100%;
     flex-wrap: wrap;
@@ -2830,6 +3177,7 @@ const toTerminalLineEndings = (value: string) =>
   .form-grid.two,
   .form-grid.three,
   .guide-grid,
+  .firewall-guide-grid,
   .variable-row {
     grid-template-columns: 1fr;
   }

@@ -668,7 +668,31 @@ const CHANGE_SSH_PORT_SCRIPT_MIGRATION_CONTENTS = [
 ]
 
 const FIREWALL_PORT_SCRIPT_DESCRIPTION =
-  '自动识别 UFW、firewalld、nftables 或 iptables 放行端口，并确认规则持久化。'
+  '自动识别 UFW、firewalld、nftables 或 iptables，按单个/多个端口、全端口和来源 IP/IP 段放行，并确认规则持久化。'
+const FIREWALL_PORT_SCRIPT_VARIABLES: LazyScriptVariable[] = [
+  {
+    name: 'ports',
+    label: '端口',
+    type: 'text',
+    defaultValue: '22,80,443',
+    required: true
+  },
+  {
+    name: 'protocol',
+    label: '协议',
+    type: 'multiselect',
+    defaultValue: 'tcp',
+    required: true,
+    options: ['tcp', 'udp']
+  },
+  {
+    name: 'sources',
+    label: '来源 IP/IP 段',
+    type: 'textarea',
+    defaultValue: 'any',
+    required: true
+  }
+]
 
 const OLD_FIREWALL_PORT_SCRIPT_CONTENT = `set -e
 PORT="{{port}}"
@@ -689,29 +713,100 @@ fi
 echo "已放行 $PORT/$PROTOCOL"`
 
 const FIREWALL_PORT_SCRIPT_CONTENT = `set -e
-PORT="{{port}}"
+set -f
+PORTS="{{ports}}"
 PROTOCOL="{{protocol}}"
+SOURCES_RAW="$(cat <<'MSHELL_SOURCES'
+{{sources}}
+MSHELL_SOURCES
+)"
 FIREWALL_FOUND=0
 FIREWALL_ERRORS=0
 FIREWALL_CHANGED=0
+PORT_LIST=""
+PROTOCOL_LIST=""
+SOURCE_LIST=""
+HAS_ANY_SOURCE=0
+HAS_ANY_PORT=0
+ANY_PORT_TOKEN="__ANY_PORT__"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "请使用 root 权限执行该脚本。"
   exit 1
 fi
 
-if ! printf '%s' "$PORT" | grep -Eq '^[0-9]+$' || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
-  echo "端口必须是 1-65535 的数字。"
+normalize_words() {
+  printf '%s' "$1" | tr ',，;；\\n\\r\\t' '      '
+}
+
+add_unique_word() {
+  LIST_VALUE="$1"
+  ITEM_VALUE="$2"
+  case " $LIST_VALUE " in
+    *" $ITEM_VALUE "*) printf '%s\\n' "$LIST_VALUE" ;;
+    *) printf '%s %s\\n' "$LIST_VALUE" "$ITEM_VALUE" | xargs ;;
+  esac
+}
+
+for PORT_ITEM in $(normalize_words "$PORTS"); do
+  case "$PORT_ITEM" in
+    '*'|any|all|ANY|ALL)
+      HAS_ANY_PORT=1
+      ;;
+    *)
+      if ! printf '%s' "$PORT_ITEM" | grep -Eq '^[0-9]+$' || [ "$PORT_ITEM" -lt 1 ] || [ "$PORT_ITEM" -gt 65535 ]; then
+        echo "端口必须是 1-65535 的数字，或使用 * 表示全部端口，当前值: $PORT_ITEM"
+        exit 1
+      fi
+      PORT_LIST="$(add_unique_word "$PORT_LIST" "$PORT_ITEM")"
+      ;;
+  esac
+done
+
+if [ "$HAS_ANY_PORT" -eq 1 ]; then
+  PORT_LIST="$ANY_PORT_TOKEN"
+fi
+
+if [ -z "$PORT_LIST" ]; then
+  echo "请至少填写一个端口。"
   exit 1
 fi
 
-case "$PROTOCOL" in
-  tcp|udp) ;;
-  *)
-    echo "协议只支持 tcp 或 udp。"
-    exit 1
-    ;;
-esac
+for PROTOCOL_ITEM in $(normalize_words "$PROTOCOL"); do
+  case "$PROTOCOL_ITEM" in
+    tcp|udp) PROTOCOL_LIST="$(add_unique_word "$PROTOCOL_LIST" "$PROTOCOL_ITEM")" ;;
+    *)
+      echo "协议只支持 tcp 或 udp，当前值: $PROTOCOL_ITEM"
+      exit 1
+      ;;
+  esac
+done
+
+if [ -z "$PROTOCOL_LIST" ]; then
+  echo "请至少选择一个协议。"
+  exit 1
+fi
+
+for SOURCE_ITEM in $(normalize_words "$SOURCES_RAW"); do
+  case "$SOURCE_ITEM" in
+    ''|any|all|ANY|ALL|'*'|0.0.0.0/0|::/0)
+      HAS_ANY_SOURCE=1
+      ;;
+    *)
+      if printf '%s' "$SOURCE_ITEM" | grep -Eq '^[0-9A-Fa-f:.]+(/[0-9]{1,3})?$'; then
+        SOURCE_LIST="$(add_unique_word "$SOURCE_LIST" "$SOURCE_ITEM")"
+      else
+        echo "来源 IP/IP 段格式不支持: $SOURCE_ITEM"
+        echo "请使用单个 IP 或 CIDR，例如 192.168.1.10、192.168.1.0/24、2001:db8::/32；任意来源填写 any。"
+        exit 1
+      fi
+      ;;
+  esac
+done
+
+if [ "$HAS_ANY_SOURCE" -eq 1 ] || [ -z "$SOURCE_LIST" ]; then
+  SOURCE_LIST="__ANY__"
+fi
 
 mark_firewall_error() {
   FIREWALL_ERRORS=1
@@ -720,6 +815,33 @@ mark_firewall_error() {
 
 mark_firewall_changed() {
   FIREWALL_CHANGED=1
+}
+
+source_label() {
+  [ "$1" = "__ANY__" ] && printf '任意来源' || printf '%s' "$1"
+}
+
+port_label() {
+  [ "$1" = "$ANY_PORT_TOKEN" ] && printf '全部端口' || printf '%s' "$1"
+}
+
+port_list_label() {
+  printf '%s' "$PORT_LIST" | sed "s/$ANY_PORT_TOKEN/全部端口/g"
+}
+
+port_for_ufw() {
+  [ "$1" = "$ANY_PORT_TOKEN" ] && printf '1:65535' || printf '%s' "$1"
+}
+
+port_for_firewalld() {
+  [ "$1" = "$ANY_PORT_TOKEN" ] && printf '1-65535' || printf '%s' "$1"
+}
+
+source_family() {
+  case "$1" in
+    *:*) printf 'ipv6' ;;
+    *) printf 'ipv4' ;;
+  esac
 }
 
 allow_ufw() {
@@ -733,13 +855,24 @@ allow_ufw() {
   fi
 
   FIREWALL_FOUND=1
-  echo "检测到 UFW，正在放行 $PORT/$PROTOCOL"
-  if ufw allow "$PORT/$PROTOCOL"; then
-    mark_firewall_changed
-    echo "UFW 规则已保存，重启后仍会生效。"
-  else
-    mark_firewall_error "UFW $PORT/$PROTOCOL"
-  fi
+  echo "检测到 UFW，正在放行端口。"
+  for PORT in $PORT_LIST; do
+    UFW_PORT="$(port_for_ufw "$PORT")"
+    PORT_TEXT="$(port_label "$PORT")"
+    for PROTOCOL_ITEM in $PROTOCOL_LIST; do
+      for SOURCE in $SOURCE_LIST; do
+        LABEL="$(source_label "$SOURCE")"
+        if [ "$SOURCE" = "__ANY__" ]; then
+          echo "UFW: $LABEL -> $PORT_TEXT/$PROTOCOL_ITEM"
+          ufw allow "$UFW_PORT/$PROTOCOL_ITEM" && mark_firewall_changed || mark_firewall_error "UFW $PORT_TEXT/$PROTOCOL_ITEM"
+        else
+          echo "UFW: $LABEL -> $PORT_TEXT/$PROTOCOL_ITEM"
+          ufw allow from "$SOURCE" to any port "$UFW_PORT" proto "$PROTOCOL_ITEM" && mark_firewall_changed || mark_firewall_error "UFW $SOURCE $PORT_TEXT/$PROTOCOL_ITEM"
+        fi
+      done
+    done
+  done
+  echo "UFW 规则已保存，重启后仍会生效。"
   return 0
 }
 
@@ -749,7 +882,7 @@ allow_firewalld() {
   fi
 
   FIREWALL_FOUND=1
-  echo "检测到 firewalld，正在放行 $PORT/$PROTOCOL"
+  echo "检测到 firewalld，正在放行端口。"
   ACTIVE_ZONES="$(firewall-cmd --get-active-zones 2>/dev/null | awk 'NR % 2 == 1 {print $1}' || true)"
   if [ -z "$ACTIVE_ZONES" ]; then
     DEFAULT_ZONE="$(firewall-cmd --get-default-zone 2>/dev/null || true)"
@@ -759,21 +892,49 @@ allow_firewalld() {
   for ZONE in $ACTIVE_ZONES; do
     [ -n "$ZONE" ] || continue
     echo "firewalld zone: $ZONE"
-    if firewall-cmd --zone="$ZONE" --query-port="$PORT/$PROTOCOL" >/dev/null 2>&1; then
-      echo "firewalld 运行时规则已存在: $ZONE $PORT/$PROTOCOL"
-    elif firewall-cmd --zone="$ZONE" --add-port="$PORT/$PROTOCOL"; then
-      mark_firewall_changed
-    else
-      mark_firewall_error "firewalld runtime $ZONE $PORT/$PROTOCOL"
-    fi
+    for PORT in $PORT_LIST; do
+      FIREWALLD_PORT="$(port_for_firewalld "$PORT")"
+      PORT_TEXT="$(port_label "$PORT")"
+      for PROTOCOL_ITEM in $PROTOCOL_LIST; do
+        for SOURCE in $SOURCE_LIST; do
+          if [ "$SOURCE" = "__ANY__" ]; then
+            if firewall-cmd --zone="$ZONE" --query-port="$FIREWALLD_PORT/$PROTOCOL_ITEM" >/dev/null 2>&1; then
+              echo "firewalld 运行时规则已存在: $ZONE $PORT_TEXT/$PROTOCOL_ITEM"
+            elif firewall-cmd --zone="$ZONE" --add-port="$FIREWALLD_PORT/$PROTOCOL_ITEM"; then
+              mark_firewall_changed
+            else
+              mark_firewall_error "firewalld runtime $ZONE $PORT_TEXT/$PROTOCOL_ITEM"
+            fi
 
-    if firewall-cmd --permanent --zone="$ZONE" --query-port="$PORT/$PROTOCOL" >/dev/null 2>&1; then
-      echo "firewalld 永久规则已存在: $ZONE $PORT/$PROTOCOL"
-    elif firewall-cmd --permanent --zone="$ZONE" --add-port="$PORT/$PROTOCOL"; then
-      mark_firewall_changed
-    else
-      mark_firewall_error "firewalld permanent $ZONE $PORT/$PROTOCOL"
-    fi
+            if firewall-cmd --permanent --zone="$ZONE" --query-port="$FIREWALLD_PORT/$PROTOCOL_ITEM" >/dev/null 2>&1; then
+              echo "firewalld 永久规则已存在: $ZONE $PORT_TEXT/$PROTOCOL_ITEM"
+            elif firewall-cmd --permanent --zone="$ZONE" --add-port="$FIREWALLD_PORT/$PROTOCOL_ITEM"; then
+              mark_firewall_changed
+            else
+              mark_firewall_error "firewalld permanent $ZONE $PORT_TEXT/$PROTOCOL_ITEM"
+            fi
+          else
+            FAMILY="$(source_family "$SOURCE")"
+            RICH_RULE="rule family=\\"$FAMILY\\" source address=\\"$SOURCE\\" port port=\\"$FIREWALLD_PORT\\" protocol=\\"$PROTOCOL_ITEM\\" accept"
+            if firewall-cmd --zone="$ZONE" --query-rich-rule="$RICH_RULE" >/dev/null 2>&1; then
+              echo "firewalld 运行时规则已存在: $ZONE $SOURCE -> $PORT_TEXT/$PROTOCOL_ITEM"
+            elif firewall-cmd --zone="$ZONE" --add-rich-rule="$RICH_RULE"; then
+              mark_firewall_changed
+            else
+              mark_firewall_error "firewalld runtime $ZONE $SOURCE $PORT_TEXT/$PROTOCOL_ITEM"
+            fi
+
+            if firewall-cmd --permanent --zone="$ZONE" --query-rich-rule="$RICH_RULE" >/dev/null 2>&1; then
+              echo "firewalld 永久规则已存在: $ZONE $SOURCE -> $PORT_TEXT/$PROTOCOL_ITEM"
+            elif firewall-cmd --permanent --zone="$ZONE" --add-rich-rule="$RICH_RULE"; then
+              mark_firewall_changed
+            else
+              mark_firewall_error "firewalld permanent $ZONE $SOURCE $PORT_TEXT/$PROTOCOL_ITEM"
+            fi
+          fi
+        done
+      done
+    done
   done
 
   firewall-cmd --reload || mark_firewall_error "firewalld reload"
@@ -791,16 +952,62 @@ allow_nftables() {
   fi
 
   FIREWALL_FOUND=1
-  echo "检测到 nftables input 规则，正在放行 $PORT/$PROTOCOL"
+  echo "检测到 nftables input 规则，正在放行端口。"
   nft list table inet mshell_port >/dev/null 2>&1 || nft add table inet mshell_port || mark_firewall_error "nft add table"
   nft list chain inet mshell_port input >/dev/null 2>&1 || nft add chain inet mshell_port input '{ type filter hook input priority -200; policy accept; }' || mark_firewall_error "nft add input chain"
-  if nft list chain inet mshell_port input 2>/dev/null | grep -q "$PROTOCOL dport $PORT accept"; then
-    echo "nftables 规则已存在: $PORT/$PROTOCOL"
-  elif nft add rule inet mshell_port input "$PROTOCOL" dport "$PORT" accept; then
-    mark_firewall_changed
-  else
-    mark_firewall_error "nft add rule $PORT/$PROTOCOL"
-  fi
+  for PORT in $PORT_LIST; do
+    PORT_TEXT="$(port_label "$PORT")"
+    for PROTOCOL_ITEM in $PROTOCOL_LIST; do
+      for SOURCE in $SOURCE_LIST; do
+        if [ "$SOURCE" = "__ANY__" ]; then
+          if [ "$PORT" = "$ANY_PORT_TOKEN" ]; then
+            RULE_TEXT="meta l4proto $PROTOCOL_ITEM accept"
+            ADD_RULE_ARGS="meta l4proto $PROTOCOL_ITEM accept"
+          else
+            RULE_TEXT="$PROTOCOL_ITEM dport $PORT accept"
+            ADD_RULE_ARGS="$PROTOCOL_ITEM dport $PORT accept"
+          fi
+          if nft list chain inet mshell_port input 2>/dev/null | grep -Fq "$RULE_TEXT"; then
+            echo "nftables 规则已存在: $PORT_TEXT/$PROTOCOL_ITEM"
+          elif nft add rule inet mshell_port input $ADD_RULE_ARGS; then
+            mark_firewall_changed
+          else
+            mark_firewall_error "nft add rule $PORT_TEXT/$PROTOCOL_ITEM"
+          fi
+        elif [ "$(source_family "$SOURCE")" = "ipv6" ]; then
+          if [ "$PORT" = "$ANY_PORT_TOKEN" ]; then
+            RULE_TEXT="ip6 saddr $SOURCE meta l4proto $PROTOCOL_ITEM accept"
+            ADD_RULE_ARGS="ip6 saddr $SOURCE meta l4proto $PROTOCOL_ITEM accept"
+          else
+            RULE_TEXT="ip6 saddr $SOURCE $PROTOCOL_ITEM dport $PORT accept"
+            ADD_RULE_ARGS="ip6 saddr $SOURCE $PROTOCOL_ITEM dport $PORT accept"
+          fi
+          if nft list chain inet mshell_port input 2>/dev/null | grep -Fq "$RULE_TEXT"; then
+            echo "nftables 规则已存在: $SOURCE -> $PORT_TEXT/$PROTOCOL_ITEM"
+          elif nft add rule inet mshell_port input $ADD_RULE_ARGS; then
+            mark_firewall_changed
+          else
+            mark_firewall_error "nft add rule $SOURCE $PORT_TEXT/$PROTOCOL_ITEM"
+          fi
+        else
+          if [ "$PORT" = "$ANY_PORT_TOKEN" ]; then
+            RULE_TEXT="ip saddr $SOURCE meta l4proto $PROTOCOL_ITEM accept"
+            ADD_RULE_ARGS="ip saddr $SOURCE meta l4proto $PROTOCOL_ITEM accept"
+          else
+            RULE_TEXT="ip saddr $SOURCE $PROTOCOL_ITEM dport $PORT accept"
+            ADD_RULE_ARGS="ip saddr $SOURCE $PROTOCOL_ITEM dport $PORT accept"
+          fi
+          if nft list chain inet mshell_port input 2>/dev/null | grep -Fq "$RULE_TEXT"; then
+            echo "nftables 规则已存在: $SOURCE -> $PORT_TEXT/$PROTOCOL_ITEM"
+          elif nft add rule inet mshell_port input $ADD_RULE_ARGS; then
+            mark_firewall_changed
+          else
+            mark_firewall_error "nft add rule $SOURCE $PORT_TEXT/$PROTOCOL_ITEM"
+          fi
+        fi
+      done
+    done
+  done
 
   if [ -f /etc/nftables.conf ] && [ -w /etc/nftables.conf ]; then
     NFT_BACKUP="/etc/nftables.conf.bak.$(date +%Y%m%d%H%M%S)"
@@ -822,6 +1029,92 @@ allow_nftables() {
   return 0
 }
 
+persist_iptables_rules() {
+  NEED_IPV6_SAVE="$1"
+  if command -v netfilter-persistent >/dev/null 2>&1; then
+    if netfilter-persistent save; then
+      echo "iptables/ip6tables 规则已通过 netfilter-persistent 保存，重启后仍会生效。"
+    else
+      mark_firewall_error "netfilter-persistent save"
+    fi
+    return
+  fi
+
+  if [ -d /etc/iptables ] && command -v iptables-save >/dev/null 2>&1; then
+    if iptables-save > /etc/iptables/rules.v4; then
+      echo "iptables 规则已保存到 /etc/iptables/rules.v4，重启后仍会生效。"
+    else
+      mark_firewall_error "iptables-save > /etc/iptables/rules.v4"
+    fi
+    if [ "$NEED_IPV6_SAVE" -eq 1 ]; then
+      if command -v ip6tables-save >/dev/null 2>&1 && ip6tables-save > /etc/iptables/rules.v6; then
+        echo "ip6tables 规则已保存到 /etc/iptables/rules.v6，重启后仍会生效。"
+      else
+        mark_firewall_error "ip6tables-save > /etc/iptables/rules.v6"
+      fi
+    fi
+    return
+  fi
+
+  if command -v service >/dev/null 2>&1; then
+    if service iptables save 2>/dev/null; then
+      echo "iptables 规则已通过 service iptables save 保存，重启后仍会生效。"
+      [ "$NEED_IPV6_SAVE" -eq 1 ] && echo "请确认当前系统是否需要额外保存 ip6tables 规则。"
+    else
+      mark_firewall_error "iptables 未找到可确认的持久化方式"
+    fi
+  else
+    mark_firewall_error "iptables 未找到可确认的持久化方式"
+  fi
+}
+
+allow_iptables_rule() {
+  TABLE_CMD="$1"
+  SOURCE="$2"
+  PORT="$3"
+  PROTOCOL_ITEM="$4"
+  LABEL="$5"
+  PORT_TEXT="$(port_label "$PORT")"
+
+  if [ "$SOURCE" = "__ANY__" ]; then
+    if [ "$PORT" = "$ANY_PORT_TOKEN" ]; then
+      if "$TABLE_CMD" -C INPUT -p "$PROTOCOL_ITEM" -j ACCEPT 2>/dev/null; then
+        echo "$LABEL 规则已存在: $PORT_TEXT/$PROTOCOL_ITEM"
+      elif "$TABLE_CMD" -I INPUT -p "$PROTOCOL_ITEM" -j ACCEPT; then
+        mark_firewall_changed
+      else
+        mark_firewall_error "$LABEL $PORT_TEXT/$PROTOCOL_ITEM"
+      fi
+    else
+      if "$TABLE_CMD" -C INPUT -p "$PROTOCOL_ITEM" --dport "$PORT" -j ACCEPT 2>/dev/null; then
+        echo "$LABEL 规则已存在: $PORT_TEXT/$PROTOCOL_ITEM"
+      elif "$TABLE_CMD" -I INPUT -p "$PROTOCOL_ITEM" --dport "$PORT" -j ACCEPT; then
+        mark_firewall_changed
+      else
+        mark_firewall_error "$LABEL $PORT_TEXT/$PROTOCOL_ITEM"
+      fi
+    fi
+  else
+    if [ "$PORT" = "$ANY_PORT_TOKEN" ]; then
+      if "$TABLE_CMD" -C INPUT -p "$PROTOCOL_ITEM" -s "$SOURCE" -j ACCEPT 2>/dev/null; then
+        echo "$LABEL 规则已存在: $SOURCE -> $PORT_TEXT/$PROTOCOL_ITEM"
+      elif "$TABLE_CMD" -I INPUT -p "$PROTOCOL_ITEM" -s "$SOURCE" -j ACCEPT; then
+        mark_firewall_changed
+      else
+        mark_firewall_error "$LABEL $SOURCE $PORT_TEXT/$PROTOCOL_ITEM"
+      fi
+    else
+      if "$TABLE_CMD" -C INPUT -p "$PROTOCOL_ITEM" -s "$SOURCE" --dport "$PORT" -j ACCEPT 2>/dev/null; then
+        echo "$LABEL 规则已存在: $SOURCE -> $PORT_TEXT/$PROTOCOL_ITEM"
+      elif "$TABLE_CMD" -I INPUT -p "$PROTOCOL_ITEM" -s "$SOURCE" --dport "$PORT" -j ACCEPT; then
+        mark_firewall_changed
+      else
+        mark_firewall_error "$LABEL $SOURCE $PORT_TEXT/$PROTOCOL_ITEM"
+      fi
+    fi
+  fi
+}
+
 allow_iptables() {
   if ! command -v iptables >/dev/null 2>&1; then
     return 1
@@ -837,36 +1130,28 @@ allow_iptables() {
   fi
 
   FIREWALL_FOUND=1
-  echo "检测到 iptables INPUT 规则，正在放行 $PORT/$PROTOCOL"
-  if iptables -C INPUT -p "$PROTOCOL" --dport "$PORT" -j ACCEPT 2>/dev/null; then
-    echo "iptables 规则已存在: $PORT/$PROTOCOL"
-  elif iptables -I INPUT -p "$PROTOCOL" --dport "$PORT" -j ACCEPT; then
-    mark_firewall_changed
-  else
-    mark_firewall_error "iptables $PORT/$PROTOCOL"
-  fi
+  echo "检测到 iptables INPUT 规则，正在放行端口。"
+  NEED_IPV6_SAVE=0
+  for PORT in $PORT_LIST; do
+    for PROTOCOL_ITEM in $PROTOCOL_LIST; do
+      for SOURCE in $SOURCE_LIST; do
+        if [ "$SOURCE" = "__ANY__" ]; then
+          allow_iptables_rule iptables "$SOURCE" "$PORT" "$PROTOCOL_ITEM" "iptables"
+        elif [ "$(source_family "$SOURCE")" = "ipv6" ]; then
+          if command -v ip6tables >/dev/null 2>&1; then
+            allow_iptables_rule ip6tables "$SOURCE" "$PORT" "$PROTOCOL_ITEM" "ip6tables"
+            NEED_IPV6_SAVE=1
+          else
+            mark_firewall_error "未检测到 ip6tables，无法放行 IPv6 来源 $SOURCE"
+          fi
+        else
+          allow_iptables_rule iptables "$SOURCE" "$PORT" "$PROTOCOL_ITEM" "iptables"
+        fi
+      done
+    done
+  done
 
-  if command -v netfilter-persistent >/dev/null 2>&1; then
-    if netfilter-persistent save; then
-      echo "iptables 规则已通过 netfilter-persistent 保存，重启后仍会生效。"
-    else
-      mark_firewall_error "netfilter-persistent save"
-    fi
-  elif [ -d /etc/iptables ] && command -v iptables-save >/dev/null 2>&1; then
-    if iptables-save > /etc/iptables/rules.v4; then
-      echo "iptables 规则已保存到 /etc/iptables/rules.v4，重启后仍会生效。"
-    else
-      mark_firewall_error "iptables-save > /etc/iptables/rules.v4"
-    fi
-  elif command -v service >/dev/null 2>&1; then
-    if service iptables save 2>/dev/null; then
-      echo "iptables 规则已通过 service iptables save 保存，重启后仍会生效。"
-    else
-      mark_firewall_error "iptables 未找到可确认的持久化方式"
-    fi
-  else
-    mark_firewall_error "iptables 未找到可确认的持久化方式"
-  fi
+  persist_iptables_rules "$NEED_IPV6_SAVE"
   return 0
 }
 
@@ -881,7 +1166,7 @@ else
 fi
 
 if [ "$FIREWALL_FOUND" -eq 0 ]; then
-  echo "未检测到已启用或可识别的本机防火墙。若云厂商安全组存在限制，请手动放行 $PORT/$PROTOCOL。"
+  echo "未检测到已启用或可识别的本机防火墙。若云厂商安全组存在限制，请手动放行端口: $(port_list_label)。"
 fi
 
 if [ "$FIREWALL_ERRORS" -ne 0 ]; then
@@ -896,7 +1181,8 @@ fi
 if [ "$FIREWALL_FOUND" -eq 0 ]; then
   echo "未检测到本机防火墙规则，无需写入本机放行规则。"
 else
-  echo "已放行 $PORT/$PROTOCOL，并已确认可识别防火墙的规则持久化。"
+  echo "已放行端口: $(port_list_label)，协议: $PROTOCOL_LIST，来源: $(printf '%s' "$SOURCE_LIST" | sed 's/__ANY__/任意来源/g')。"
+  echo "已确认可识别防火墙的规则持久化。"
 fi`
 
 const SYSTEM_INFO_SCRIPT_DESCRIPTION =
@@ -2507,17 +2793,7 @@ echo "用户 $NEW_USER 已创建并授予 sudo 权限。"`,
     tags: ['firewall', 'port'],
     type: 'shell',
     content: FIREWALL_PORT_SCRIPT_CONTENT,
-    variables: [
-      { name: 'port', label: '端口', type: 'number', defaultValue: '22', required: true },
-      {
-        name: 'protocol',
-        label: '协议',
-        type: 'select',
-        defaultValue: 'tcp',
-        required: true,
-        options: ['tcp', 'udp']
-      }
-    ],
+    variables: FIREWALL_PORT_SCRIPT_VARIABLES,
     riskLevel: 'medium',
     runMode: 'paste'
   },
@@ -2836,7 +3112,8 @@ export class LazyScriptManager extends BaseManager<LazyScript> {
     if (firewallPortScript && this.shouldMigrateFirewallPortScript(firewallPortScript.content)) {
       await this.update(firewallPortScript.id, {
         description: FIREWALL_PORT_SCRIPT_DESCRIPTION,
-        content: FIREWALL_PORT_SCRIPT_CONTENT
+        content: FIREWALL_PORT_SCRIPT_CONTENT,
+        variables: FIREWALL_PORT_SCRIPT_VARIABLES
       })
     }
 
@@ -2935,7 +3212,12 @@ export class LazyScriptManager extends BaseManager<LazyScript> {
     const normalized = content.replace(/\r\n/g, '\n')
     return (
       normalized.includes('未检测到已支持的防火墙工具。') ||
-      normalized.includes('iptables -I INPUT -p "$PROTOCOL" --dport "$PORT" -j ACCEPT')
+      normalized.includes('iptables -I INPUT -p "$PROTOCOL" --dport "$PORT" -j ACCEPT') ||
+      (normalized.includes('PORT="{{port}}"') &&
+        normalized.includes('PROTOCOL="{{protocol}}"') &&
+        !normalized.includes('PORTS="{{ports}}"')) ||
+      (normalized.includes('PORTS="{{ports}}"') && !normalized.includes('ANY_PORT_TOKEN="__ANY_PORT__"')) ||
+      (normalized.includes('ANY_PORT_TOKEN="__ANY_PORT__"') && !normalized.includes('set -f'))
     )
   }
 
