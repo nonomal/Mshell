@@ -36,6 +36,19 @@ export interface LazyScript {
 const VARIABLE_NAME_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/
 const CHANGE_SSH_PORT_SCRIPT_DESCRIPTION =
   '修改 sshd 监听端口，并自动检测本机防火墙与 SELinux 放行。'
+const DISABLE_SSH_PASSWORD_SCRIPT_DESCRIPTION =
+  '禁用 SSH 密码与交互式密码认证，仅允许已配置公钥的用户使用密钥登录。'
+const ENABLE_SSH_PASSWORD_SCRIPT_DESCRIPTION =
+  '开启 SSH 密码与交互式密码认证，可同时设置 SSH 端口，适合临时测试后再关闭。'
+const CHANGE_LOGIN_PASSWORD_SCRIPT_DESCRIPTION =
+  '为指定 Linux 用户修改登录密码，适合临时重置或初始化账号密码。'
+const SSH_PORT_VARIABLE: LazyScriptVariable = {
+  name: 'ssh_port',
+  label: 'SSH 端口',
+  type: 'number',
+  defaultValue: '22',
+  required: true
+}
 
 const OLD_CHANGE_SSH_PORT_SCRIPT_CONTENT = `set -e
 NEW_PORT="{{ssh_port}}"
@@ -953,6 +966,580 @@ echo
 hr
 echo "Check completed."`
 
+const DISABLE_SSH_PASSWORD_SCRIPT_CONTENT = `set -e
+TARGET_USER="{{username}}"
+SSHD_CONFIG="/etc/ssh/sshd_config"
+BACKUP_SUFFIX="$(date +%Y%m%d%H%M%S)"
+BACKUP_LIST="$(mktemp)"
+VALIDATION_LOG="$(mktemp)"
+
+cleanup() {
+  rm -f "$BACKUP_LIST" "$VALIDATION_LOG"
+}
+trap cleanup EXIT
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "请使用 root 权限执行该脚本。"
+  exit 1
+fi
+
+SSHD_BIN="$(command -v sshd || true)"
+if [ -z "$SSHD_BIN" ] && [ -x /usr/sbin/sshd ]; then
+  SSHD_BIN="/usr/sbin/sshd"
+fi
+if [ -z "$SSHD_BIN" ]; then
+  echo "未检测到 sshd，请先确认系统 SSH 服务。"
+  exit 1
+fi
+
+if [ ! -f "$SSHD_CONFIG" ]; then
+  echo "未找到 SSH 配置文件: $SSHD_CONFIG"
+  exit 1
+fi
+
+USER_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+if [ -z "$USER_HOME" ]; then
+  echo "用户不存在: $TARGET_USER"
+  exit 1
+fi
+
+AUTHORIZED_KEYS="$USER_HOME/.ssh/authorized_keys"
+if [ ! -s "$AUTHORIZED_KEYS" ]; then
+  echo "操作前检查未通过：未检测到 $TARGET_USER 的 authorized_keys。"
+  echo "当前不会修改 SSH 配置。请先添加并测试 SSH 公钥登录，再关闭密码登录。"
+  exit 1
+fi
+
+has_authorized_key() {
+  awk '
+    /^[[:space:]]*($|#)/ { next }
+    {
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ /^(ssh-rsa|ssh-ed25519|ecdsa-sha2-|sk-ssh-|sk-ecdsa-)/) {
+          found = 1
+          exit
+        }
+      }
+    }
+    END { exit found ? 0 : 1 }
+  ' "$AUTHORIZED_KEYS"
+}
+
+if ! has_authorized_key; then
+  echo "操作前检查未通过：$AUTHORIZED_KEYS 中未检测到有效 SSH 公钥。"
+  echo "当前不会修改 SSH 配置。请先添加并测试 SSH 公钥登录，再关闭密码登录。"
+  exit 1
+fi
+
+echo "操作前检查通过：已检测到 $TARGET_USER 的 SSH 公钥。"
+
+backup_once() {
+  FILE="$1"
+  BACKUP="$FILE.bak.$BACKUP_SUFFIX"
+  if grep -Fq "$FILE|" "$BACKUP_LIST" 2>/dev/null; then
+    return
+  fi
+  cp "$FILE" "$BACKUP"
+  printf '%s|%s\\n' "$FILE" "$BACKUP" >> "$BACKUP_LIST"
+  echo "已备份: $BACKUP"
+}
+
+restore_backups() {
+  echo "正在恢复 SSH 配置备份..."
+  while IFS='|' read -r FILE BACKUP; do
+    [ -n "$FILE" ] && [ -f "$BACKUP" ] && cp "$BACKUP" "$FILE"
+  done < "$BACKUP_LIST"
+}
+
+restart_ssh() {
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl restart sshd 2>/dev/null && return 0
+    systemctl restart ssh 2>/dev/null && return 0
+  fi
+  service sshd restart 2>/dev/null && return 0
+  service ssh restart 2>/dev/null && return 0
+  /etc/init.d/sshd restart 2>/dev/null && return 0
+  /etc/init.d/ssh restart 2>/dev/null && return 0
+  return 1
+}
+
+write_managed_block() {
+  TMP_CONFIG="$(mktemp)"
+  TMP_CLEAN="$(mktemp)"
+
+  awk '
+    /^# BEGIN MSHELL SSH KEY ONLY$/ { skip = 1; next }
+    /^# END MSHELL SSH KEY ONLY$/ { skip = 0; next }
+    /^# BEGIN MSHELL SSH PASSWORD LOGIN$/ { skip = 1; next }
+    /^# END MSHELL SSH PASSWORD LOGIN$/ { skip = 0; next }
+    skip != 1 { print }
+  ' "$SSHD_CONFIG" > "$TMP_CLEAN"
+
+  cat > "$TMP_CONFIG" <<'MSHELL_SSH_KEY_ONLY'
+# BEGIN MSHELL SSH KEY ONLY
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+# END MSHELL SSH KEY ONLY
+
+MSHELL_SSH_KEY_ONLY
+  cat "$TMP_CLEAN" >> "$TMP_CONFIG"
+  cat "$TMP_CONFIG" > "$SSHD_CONFIG"
+  rm -f "$TMP_CONFIG" "$TMP_CLEAN"
+}
+
+backup_once "$SSHD_CONFIG"
+write_managed_block
+
+if ! "$SSHD_BIN" -t 2>"$VALIDATION_LOG"; then
+  if grep -qi 'KbdInteractiveAuthentication' "$VALIDATION_LOG"; then
+    echo "当前 sshd 不支持 KbdInteractiveAuthentication，正在使用兼容配置重试。"
+    sed -i '/^KbdInteractiveAuthentication /d' "$SSHD_CONFIG"
+  fi
+  if grep -qi 'ChallengeResponseAuthentication' "$VALIDATION_LOG"; then
+    echo "当前 sshd 不支持 ChallengeResponseAuthentication，正在使用兼容配置重试。"
+    sed -i '/^ChallengeResponseAuthentication /d' "$SSHD_CONFIG"
+  fi
+fi
+
+if ! "$SSHD_BIN" -t 2>"$VALIDATION_LOG"; then
+  cat "$VALIDATION_LOG"
+  restore_backups
+  echo "sshd 配置校验失败，已恢复原配置。"
+  exit 1
+fi
+
+EFFECTIVE_CONFIG="$("$SSHD_BIN" -T 2>/dev/null || true)"
+PASSWORD_STATE="$(printf '%s\\n' "$EFFECTIVE_CONFIG" | awk '$1 == "passwordauthentication" {print $2; exit}')"
+PUBKEY_STATE="$(printf '%s\\n' "$EFFECTIVE_CONFIG" | awk '$1 == "pubkeyauthentication" {print $2; exit}')"
+KBD_STATE="$(printf '%s\\n' "$EFFECTIVE_CONFIG" | awk '$1 == "kbdinteractiveauthentication" {print $2; exit}')"
+
+if [ "$PASSWORD_STATE" != "no" ] || [ "$PUBKEY_STATE" != "yes" ]; then
+  printf '%s\\n' "$EFFECTIVE_CONFIG" | awk '
+    $1 == "passwordauthentication" || $1 == "pubkeyauthentication" || $1 == "kbdinteractiveauthentication" { print }
+  '
+  restore_backups
+  echo "未能确认 SSH 已切换为仅密钥登录，已恢复原配置。"
+  exit 1
+fi
+
+if [ -n "$KBD_STATE" ] && [ "$KBD_STATE" != "no" ]; then
+  printf '%s\\n' "$EFFECTIVE_CONFIG" | awk '
+    $1 == "passwordauthentication" || $1 == "pubkeyauthentication" || $1 == "kbdinteractiveauthentication" { print }
+  '
+  restore_backups
+  echo "交互式密码认证仍未关闭，已恢复原配置。"
+  exit 1
+fi
+
+if ! restart_ssh; then
+  restore_backups
+  restart_ssh >/dev/null 2>&1 || true
+  echo "SSH 服务重启失败，已恢复原配置。"
+  exit 1
+fi
+
+echo "已关闭 SSH 密码登录，仅允许密钥认证。"
+echo "请保留当前连接，另开一个新窗口测试密钥登录后再断开。"`
+
+const ENABLE_SSH_PASSWORD_SCRIPT_CONTENT = `set -e
+NEW_PORT="{{ssh_port}}"
+PROTOCOL="tcp"
+SSHD_CONFIG="/etc/ssh/sshd_config"
+BACKUP_SUFFIX="$(date +%Y%m%d%H%M%S)"
+BACKUP_LIST="$(mktemp)"
+VALIDATION_LOG="$(mktemp)"
+FIREWALL_FOUND=0
+FIREWALL_ERRORS=0
+FIREWALL_CHANGED=0
+
+cleanup() {
+  rm -f "$BACKUP_LIST" "$VALIDATION_LOG"
+}
+trap cleanup EXIT
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "请使用 root 权限执行该脚本。"
+  exit 1
+fi
+
+if ! printf '%s' "$NEW_PORT" | grep -Eq '^[0-9]+$' || [ "$NEW_PORT" -lt 1 ] || [ "$NEW_PORT" -gt 65535 ]; then
+  echo "SSH 端口必须是 1-65535 的数字。"
+  exit 1
+fi
+
+SSHD_BIN="$(command -v sshd || true)"
+if [ -z "$SSHD_BIN" ] && [ -x /usr/sbin/sshd ]; then
+  SSHD_BIN="/usr/sbin/sshd"
+fi
+if [ -z "$SSHD_BIN" ]; then
+  echo "未检测到 sshd，请先确认系统 SSH 服务。"
+  exit 1
+fi
+
+if [ ! -f "$SSHD_CONFIG" ]; then
+  echo "未找到 SSH 配置文件: $SSHD_CONFIG"
+  exit 1
+fi
+
+mark_firewall_error() {
+  FIREWALL_ERRORS=1
+  echo "防火墙/安全策略放行失败: $1"
+}
+
+mark_firewall_changed() {
+  FIREWALL_CHANGED=1
+}
+
+backup_once() {
+  FILE="$1"
+  BACKUP="$FILE.bak.$BACKUP_SUFFIX"
+  if grep -Fq "$FILE|" "$BACKUP_LIST" 2>/dev/null; then
+    return
+  fi
+  cp "$FILE" "$BACKUP"
+  printf '%s|%s\\n' "$FILE" "$BACKUP" >> "$BACKUP_LIST"
+  echo "已备份: $BACKUP"
+}
+
+restore_backups() {
+  echo "正在恢复 SSH 配置备份..."
+  while IFS='|' read -r FILE BACKUP; do
+    [ -n "$FILE" ] && [ -f "$BACKUP" ] && cp "$BACKUP" "$FILE"
+  done < "$BACKUP_LIST"
+}
+
+restart_ssh() {
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl restart sshd 2>/dev/null && return 0
+    systemctl restart ssh 2>/dev/null && return 0
+  fi
+  service sshd restart 2>/dev/null && return 0
+  service ssh restart 2>/dev/null && return 0
+  /etc/init.d/sshd restart 2>/dev/null && return 0
+  /etc/init.d/ssh restart 2>/dev/null && return 0
+  return 1
+}
+
+ensure_selinux_port() {
+  if ! command -v getenforce >/dev/null 2>&1; then
+    return
+  fi
+
+  SELINUX_MODE="$(getenforce 2>/dev/null || echo Disabled)"
+  if [ "$SELINUX_MODE" = "Disabled" ]; then
+    return
+  fi
+
+  if ! command -v semanage >/dev/null 2>&1; then
+    if [ "$SELINUX_MODE" = "Enforcing" ]; then
+      echo "SELinux 处于 Enforcing，但未安装 semanage，无法确认新端口是否允许。"
+      echo "请先安装 policycoreutils-python-utils 或手动放行 ssh_port_t 后再执行。"
+      FIREWALL_ERRORS=1
+    else
+      echo "SELinux 处于 $SELINUX_MODE，未检测到 semanage，跳过 SELinux 端口策略。"
+    fi
+    return
+  fi
+
+  if semanage port -l 2>/dev/null | awk '$1 == "ssh_port_t" && $2 == "tcp" {print $0}' | grep -Eq "(^|[ ,])$NEW_PORT([, ]|$)"; then
+    echo "SELinux 已允许 SSH 端口 $NEW_PORT/tcp"
+    return
+  fi
+
+  echo "检测到 SELinux，正在允许 SSH 端口 $NEW_PORT/tcp"
+  if semanage port -a -t ssh_port_t -p tcp "$NEW_PORT" 2>/dev/null; then
+    echo "已添加 SELinux SSH 端口策略: $NEW_PORT/tcp"
+    mark_firewall_changed
+  elif semanage port -m -t ssh_port_t -p tcp "$NEW_PORT" 2>/dev/null; then
+    echo "已更新 SELinux SSH 端口策略: $NEW_PORT/tcp"
+    mark_firewall_changed
+  else
+    mark_firewall_error "SELinux ssh_port_t $NEW_PORT/tcp"
+  fi
+}
+
+allow_ufw() {
+  if ! command -v ufw >/dev/null 2>&1; then
+    return 1
+  fi
+
+  if ! ufw status 2>/dev/null | grep -qi "Status: active"; then
+    echo "检测到 UFW，但当前未启用，跳过。"
+    return 1
+  fi
+
+  FIREWALL_FOUND=1
+  echo "检测到 UFW，正在放行 $NEW_PORT/$PROTOCOL"
+  if ufw allow "$NEW_PORT/$PROTOCOL"; then
+    mark_firewall_changed
+  else
+    mark_firewall_error "UFW $NEW_PORT/$PROTOCOL"
+  fi
+  return 0
+}
+
+allow_firewalld() {
+  if ! command -v firewall-cmd >/dev/null 2>&1 || ! firewall-cmd --state >/dev/null 2>&1; then
+    return 1
+  fi
+
+  FIREWALL_FOUND=1
+  echo "检测到 firewalld，正在放行 $NEW_PORT/$PROTOCOL"
+  ACTIVE_ZONES="$(firewall-cmd --get-active-zones 2>/dev/null | awk 'NR % 2 == 1 {print $1}' || true)"
+  if [ -z "$ACTIVE_ZONES" ]; then
+    ACTIVE_ZONES="$(firewall-cmd --get-default-zone 2>/dev/null || true)"
+  fi
+
+  for ZONE in $ACTIVE_ZONES; do
+    [ -n "$ZONE" ] || continue
+    echo "firewalld zone: $ZONE"
+    firewall-cmd --zone="$ZONE" --query-port="$NEW_PORT/$PROTOCOL" >/dev/null 2>&1 || firewall-cmd --zone="$ZONE" --add-port="$NEW_PORT/$PROTOCOL" || mark_firewall_error "firewalld runtime $ZONE $NEW_PORT/$PROTOCOL"
+    firewall-cmd --permanent --zone="$ZONE" --query-port="$NEW_PORT/$PROTOCOL" >/dev/null 2>&1 || firewall-cmd --permanent --zone="$ZONE" --add-port="$NEW_PORT/$PROTOCOL" || mark_firewall_error "firewalld permanent $ZONE $NEW_PORT/$PROTOCOL"
+    mark_firewall_changed
+  done
+
+  firewall-cmd --reload || mark_firewall_error "firewalld reload"
+  return 0
+}
+
+allow_nftables() {
+  if ! command -v nft >/dev/null 2>&1; then
+    return 1
+  fi
+
+  NFT_RULESET="$(nft list ruleset 2>/dev/null || true)"
+  if ! printf '%s\\n' "$NFT_RULESET" | grep -Eq 'hook input'; then
+    return 1
+  fi
+
+  FIREWALL_FOUND=1
+  echo "检测到 nftables input 规则，正在添加运行时放行 $NEW_PORT/$PROTOCOL"
+  nft list table inet mshell_ssh >/dev/null 2>&1 || nft add table inet mshell_ssh || mark_firewall_error "nft add table"
+  nft list chain inet mshell_ssh input >/dev/null 2>&1 || nft add chain inet mshell_ssh input '{ type filter hook input priority -200; policy accept; }' || mark_firewall_error "nft add input chain"
+  if nft list chain inet mshell_ssh input 2>/dev/null | grep -q "tcp dport $NEW_PORT accept"; then
+    echo "nftables 规则已存在: $NEW_PORT/$PROTOCOL"
+  elif nft add rule inet mshell_ssh input tcp dport "$NEW_PORT" accept; then
+    mark_firewall_changed
+  else
+    mark_firewall_error "nft add rule $NEW_PORT/$PROTOCOL"
+  fi
+
+  if [ -f /etc/nftables.conf ] && [ -w /etc/nftables.conf ]; then
+    NFT_BACKUP="/etc/nftables.conf.bak.$BACKUP_SUFFIX"
+    cp /etc/nftables.conf "$NFT_BACKUP" && nft list ruleset > /etc/nftables.conf || mark_firewall_error "nftables 持久化到 /etc/nftables.conf"
+  elif command -v systemctl >/dev/null 2>&1 && systemctl is-enabled --quiet nftables 2>/dev/null; then
+    mark_firewall_error "nftables 服务已启用，但无法写入 /etc/nftables.conf 持久化规则"
+  else
+    mark_firewall_error "未找到可确认的 nftables 持久化配置，规则可能重启后丢失"
+  fi
+  return 0
+}
+
+allow_iptables() {
+  if ! command -v iptables >/dev/null 2>&1; then
+    return 1
+  fi
+
+  IPTABLES_INPUT="$(iptables -S INPUT 2>/dev/null || true)"
+  if ! printf '%s\\n' "$IPTABLES_INPUT" | grep -Eq '^-P INPUT (DROP|REJECT)|^-A INPUT'; then
+    return 1
+  fi
+
+  FIREWALL_FOUND=1
+  echo "检测到 iptables INPUT 规则，正在放行 $NEW_PORT/$PROTOCOL"
+  iptables -C INPUT -p tcp --dport "$NEW_PORT" -j ACCEPT 2>/dev/null || iptables -I INPUT -p tcp --dport "$NEW_PORT" -j ACCEPT || mark_firewall_error "iptables $NEW_PORT/$PROTOCOL"
+
+  if command -v netfilter-persistent >/dev/null 2>&1; then
+    netfilter-persistent save || mark_firewall_error "netfilter-persistent save"
+  elif [ -d /etc/iptables ] && command -v iptables-save >/dev/null 2>&1; then
+    iptables-save > /etc/iptables/rules.v4 || mark_firewall_error "iptables-save > /etc/iptables/rules.v4"
+  elif command -v service >/dev/null 2>&1; then
+    service iptables save 2>/dev/null || mark_firewall_error "iptables 未找到可确认的持久化方式"
+  else
+    mark_firewall_error "iptables 未找到可确认的持久化方式"
+  fi
+  mark_firewall_changed
+  return 0
+}
+
+allow_firewalls() {
+  ensure_selinux_port
+
+  if allow_ufw; then
+    :
+  elif allow_firewalld; then
+    :
+  elif allow_nftables; then
+    :
+  else
+    allow_iptables || true
+  fi
+
+  if [ "$FIREWALL_FOUND" -eq 0 ]; then
+    echo "未检测到已启用或可识别的本机防火墙。若云厂商安全组存在限制，请手动放行 $NEW_PORT/$PROTOCOL。"
+  fi
+
+  if [ "$FIREWALL_ERRORS" -ne 0 ]; then
+    echo "检测到防火墙或 SELinux 放行失败，已停止修改 SSH 配置，避免锁定服务器。"
+    exit 1
+  fi
+
+  if [ "$FIREWALL_CHANGED" -eq 0 ]; then
+    echo "本机防火墙/安全策略未发现需要新增的规则。"
+  fi
+}
+
+write_managed_block() {
+  TMP_CONFIG="$(mktemp)"
+  TMP_CLEAN="$(mktemp)"
+
+  awk '
+    /^# BEGIN MSHELL SSH KEY ONLY$/ { skip = 1; next }
+    /^# END MSHELL SSH KEY ONLY$/ { skip = 0; next }
+    /^# BEGIN MSHELL SSH PASSWORD LOGIN$/ { skip = 1; next }
+    /^# END MSHELL SSH PASSWORD LOGIN$/ { skip = 0; next }
+    skip != 1 { print }
+  ' "$SSHD_CONFIG" > "$TMP_CLEAN"
+
+  cat > "$TMP_CONFIG" <<'MSHELL_SSH_PASSWORD_LOGIN'
+# BEGIN MSHELL SSH PASSWORD LOGIN
+Port __MSHELL_NEW_PORT__
+PubkeyAuthentication yes
+PasswordAuthentication yes
+KbdInteractiveAuthentication yes
+ChallengeResponseAuthentication yes
+# END MSHELL SSH PASSWORD LOGIN
+
+MSHELL_SSH_PASSWORD_LOGIN
+  sed -i "s/__MSHELL_NEW_PORT__/$NEW_PORT/" "$TMP_CONFIG"
+  cat "$TMP_CLEAN" >> "$TMP_CONFIG"
+  cat "$TMP_CONFIG" > "$SSHD_CONFIG"
+  rm -f "$TMP_CONFIG" "$TMP_CLEAN"
+}
+
+allow_firewalls
+backup_once "$SSHD_CONFIG"
+write_managed_block
+
+if ! "$SSHD_BIN" -t 2>"$VALIDATION_LOG"; then
+  if grep -qi 'KbdInteractiveAuthentication' "$VALIDATION_LOG"; then
+    echo "当前 sshd 不支持 KbdInteractiveAuthentication，正在使用兼容配置重试。"
+    sed -i '/^KbdInteractiveAuthentication /d' "$SSHD_CONFIG"
+  fi
+  if grep -qi 'ChallengeResponseAuthentication' "$VALIDATION_LOG"; then
+    echo "当前 sshd 不支持 ChallengeResponseAuthentication，正在使用兼容配置重试。"
+    sed -i '/^ChallengeResponseAuthentication /d' "$SSHD_CONFIG"
+  fi
+fi
+
+if ! "$SSHD_BIN" -t 2>"$VALIDATION_LOG"; then
+  cat "$VALIDATION_LOG"
+  restore_backups
+  echo "sshd 配置校验失败，已恢复原配置。"
+  exit 1
+fi
+
+EFFECTIVE_CONFIG="$("$SSHD_BIN" -T 2>/dev/null || true)"
+PASSWORD_STATE="$(printf '%s\\n' "$EFFECTIVE_CONFIG" | awk '$1 == "passwordauthentication" {print $2; exit}')"
+PUBKEY_STATE="$(printf '%s\\n' "$EFFECTIVE_CONFIG" | awk '$1 == "pubkeyauthentication" {print $2; exit}')"
+KBD_STATE="$(printf '%s\\n' "$EFFECTIVE_CONFIG" | awk '$1 == "kbdinteractiveauthentication" {print $2; exit}')"
+PORT_STATE="$(printf '%s\\n' "$EFFECTIVE_CONFIG" | awk '$1 == "port" {print $2}' | sort -n | uniq | xargs 2>/dev/null || true)"
+
+if [ "$PASSWORD_STATE" != "yes" ] || [ "$PUBKEY_STATE" != "yes" ]; then
+  printf '%s\\n' "$EFFECTIVE_CONFIG" | awk '
+    $1 == "passwordauthentication" || $1 == "pubkeyauthentication" || $1 == "kbdinteractiveauthentication" { print }
+  '
+  restore_backups
+  echo "未能确认 SSH 密码登录已开启，已恢复原配置。"
+  exit 1
+fi
+
+if [ -n "$KBD_STATE" ] && [ "$KBD_STATE" != "yes" ]; then
+  printf '%s\\n' "$EFFECTIVE_CONFIG" | awk '
+    $1 == "passwordauthentication" || $1 == "pubkeyauthentication" || $1 == "kbdinteractiveauthentication" { print }
+  '
+  restore_backups
+  echo "交互式密码认证仍未开启，已恢复原配置。"
+  exit 1
+fi
+
+if ! printf '%s\\n' "$PORT_STATE" | tr ' ' '\\n' | grep -qx "$NEW_PORT"; then
+  printf '%s\\n' "$EFFECTIVE_CONFIG" | awk '$1 == "port" { print }'
+  restore_backups
+  echo "未能确认 SSH 端口已设置为 $NEW_PORT，已恢复原配置。"
+  exit 1
+fi
+
+if ! restart_ssh; then
+  restore_backups
+  restart_ssh >/dev/null 2>&1 || true
+  echo "SSH 服务重启失败，已恢复原配置。"
+  exit 1
+fi
+
+echo "已开启 SSH 密码登录，并将 SSH 端口设置为 $NEW_PORT。"
+echo "请先打开新连接测试 $NEW_PORT 端口，再关闭当前连接。"
+echo "如果服务器还有云厂商安全组/外部防火墙，请同时放行 $NEW_PORT/$PROTOCOL。"
+echo "临时测试完成后，建议重新执行“关闭 SSH 密码登录”。"`
+
+const CHANGE_LOGIN_PASSWORD_SCRIPT_CONTENT = `set -e
+TARGET_USER="$(cat <<'MSHELL_USERNAME'
+{{username}}
+MSHELL_USERNAME
+)"
+NEW_PASSWORD="$(cat <<'MSHELL_PASSWORD'
+{{new_password}}
+MSHELL_PASSWORD
+)"
+
+TARGET_USER="$(printf '%s' "$TARGET_USER" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "请使用 root 权限执行该脚本。"
+  exit 1
+fi
+
+if [ -z "$TARGET_USER" ]; then
+  echo "用户名不能为空。"
+  exit 1
+fi
+
+if printf '%s' "$TARGET_USER" | grep -q '[[:space:]:]'; then
+  echo "用户名不能包含空白字符或冒号。"
+  exit 1
+fi
+
+if ! getent passwd "$TARGET_USER" >/dev/null 2>&1; then
+  echo "用户不存在: $TARGET_USER"
+  exit 1
+fi
+
+if [ -z "$NEW_PASSWORD" ]; then
+  echo "新密码不能为空。"
+  exit 1
+fi
+
+if printf '%s' "$NEW_PASSWORD" | grep -q ':'; then
+  echo "新密码不能包含冒号字符。"
+  exit 1
+fi
+
+if [ "$(printf '%s' "$NEW_PASSWORD" | wc -l | awk '{print $1}')" -gt 0 ]; then
+  echo "新密码不能包含换行。"
+  exit 1
+fi
+
+if ! command -v chpasswd >/dev/null 2>&1; then
+  echo "未检测到 chpasswd，无法自动修改密码。"
+  exit 1
+fi
+
+printf '%s:%s\\n' "$TARGET_USER" "$NEW_PASSWORD" | chpasswd
+echo "用户 $TARGET_USER 的登录密码已修改。"
+echo "请使用新密码另开窗口测试登录后，再关闭当前连接。"`
+
 const DEFAULT_LAZY_SCRIPTS: Array<Omit<LazyScript, 'id' | 'usageCount' | 'createdAt' | 'updatedAt'>> = [
   {
     name: '查看系统基础信息',
@@ -1017,6 +1604,32 @@ echo "公钥已添加到 $TARGET_USER"`,
     runMode: 'paste'
   },
   {
+    name: '关闭 SSH 密码登录',
+    fileName: 'disable-ssh-password-login.sh',
+    description: DISABLE_SSH_PASSWORD_SCRIPT_DESCRIPTION,
+    category: 'SSH 加固',
+    tags: ['ssh', 'key', 'password', 'hardening'],
+    type: 'shell',
+    content: DISABLE_SSH_PASSWORD_SCRIPT_CONTENT,
+    variables: [
+      { name: 'username', label: '校验用户', type: 'text', defaultValue: 'root', required: true }
+    ],
+    riskLevel: 'high',
+    runMode: 'paste'
+  },
+  {
+    name: '开启 SSH 密码登录',
+    fileName: 'enable-ssh-password-login.sh',
+    description: ENABLE_SSH_PASSWORD_SCRIPT_DESCRIPTION,
+    category: 'SSH 加固',
+    tags: ['ssh', 'password', 'temporary-access'],
+    type: 'shell',
+    content: ENABLE_SSH_PASSWORD_SCRIPT_CONTENT,
+    variables: [SSH_PORT_VARIABLE],
+    riskLevel: 'high',
+    runMode: 'paste'
+  },
+  {
     name: '创建 sudo 用户',
     fileName: 'create-sudo-user.sh',
     description: '创建新用户、设置密码并加入 sudo/wheel 权限组。',
@@ -1040,6 +1653,21 @@ echo "用户 $NEW_USER 已创建并授予 sudo 权限。"`,
     variables: [
       { name: 'username', label: '用户名', type: 'text', defaultValue: 'deploy', required: true },
       { name: 'password', label: '初始密码', type: 'password', required: true }
+    ],
+    riskLevel: 'high',
+    runMode: 'paste'
+  },
+  {
+    name: '修改用户登录密码',
+    fileName: 'change-login-password.sh',
+    description: CHANGE_LOGIN_PASSWORD_SCRIPT_DESCRIPTION,
+    category: '用户管理',
+    tags: ['user', 'password'],
+    type: 'shell',
+    content: CHANGE_LOGIN_PASSWORD_SCRIPT_CONTENT,
+    variables: [
+      { name: 'username', label: '用户名', type: 'text', defaultValue: 'root', required: true },
+      { name: 'new_password', label: '新登录密码', type: 'password', required: true }
     ],
     riskLevel: 'high',
     runMode: 'paste'
@@ -1134,6 +1762,18 @@ docker --version`,
   }
 ]
 
+const LEGACY_DEFAULT_SCRIPT_FILE_NAMES = new Set([
+  '查看系统基础信息.sh',
+  '修改-SSH-端口并重启.sh',
+  '添加-SSH-公钥.sh',
+  '关闭-SSH-密码登录.sh',
+  '创建-sudo-用户.sh',
+  '放行防火墙端口.sh',
+  '安装常用工具.sh',
+  '检查磁盘大目录.sh',
+  '安装-Docker.sh'
+])
+
 export class LazyScriptManager extends BaseManager<LazyScript> {
   private initializePromise: Promise<void> | null = null
 
@@ -1170,6 +1810,7 @@ export class LazyScriptManager extends BaseManager<LazyScript> {
     }
 
     await this.migrateDefaultScripts()
+    await this.seedMissingDefaultScripts()
   }
 
   async create(data: {
@@ -1334,7 +1975,31 @@ export class LazyScriptManager extends BaseManager<LazyScript> {
     }
   }
 
+  private async seedMissingDefaultScripts(): Promise<void> {
+    const existingFileNames = new Set(
+      this.getAll().map((script) => this.normalizeFileName(script.fileName || script.name))
+    )
+    const now = new Date().toISOString()
+
+    for (const template of DEFAULT_LAZY_SCRIPTS) {
+      const fileName = this.normalizeFileName(template.fileName || template.name)
+      if (existingFileNames.has(fileName)) continue
+
+      await super.create({
+        ...template,
+        fileName,
+        id: uuidv4(),
+        usageCount: 0,
+        createdAt: now,
+        updatedAt: now
+      })
+      existingFileNames.add(fileName)
+    }
+  }
+
   private async migrateDefaultScripts(): Promise<void> {
+    await this.deleteLegacyDefaultScripts()
+
     const changeSshPortScript = this.getAll().find(
       (script) =>
         script.fileName === 'change-ssh-port.sh' || script.name === '修改 SSH 端口并重启'
@@ -1367,6 +2032,31 @@ export class LazyScriptManager extends BaseManager<LazyScript> {
         description: SYSTEM_INFO_SCRIPT_DESCRIPTION,
         content: SYSTEM_INFO_SCRIPT_CONTENT
       })
+    }
+
+    const enableSshPasswordScript = this.getAll().find(
+      (script) =>
+        script.fileName === 'enable-ssh-password-login.sh' || script.name === '开启 SSH 密码登录'
+    )
+
+    if (
+      enableSshPasswordScript &&
+      this.shouldMigrateEnableSshPasswordScript(enableSshPasswordScript)
+    ) {
+      await this.update(enableSshPasswordScript.id, {
+        description: ENABLE_SSH_PASSWORD_SCRIPT_DESCRIPTION,
+        content: ENABLE_SSH_PASSWORD_SCRIPT_CONTENT,
+        variables: [SSH_PORT_VARIABLE]
+      })
+    }
+  }
+
+  private async deleteLegacyDefaultScripts(): Promise<void> {
+    for (const script of this.getAll()) {
+      const fileName = this.normalizeFileName(script.fileName || script.name)
+      if (!LEGACY_DEFAULT_SCRIPT_FILE_NAMES.has(fileName)) continue
+
+      await super.delete(script.id)
     }
   }
 
@@ -1416,6 +2106,17 @@ export class LazyScriptManager extends BaseManager<LazyScript> {
       normalized.includes('free -h') &&
       normalized.includes('df -hT') &&
       normalized.includes("ip addr show | sed -n '1,120p'")
+    )
+  }
+
+  private shouldMigrateEnableSshPasswordScript(script: LazyScript): boolean {
+    const normalized = script.content.replace(/\r\n/g, '\n')
+    const hasSshPortVariable = script.variables.some((variable) => variable.name === 'ssh_port')
+
+    return (
+      !hasSshPortVariable ||
+      (normalized.includes('已开启 SSH 密码登录，并保留密钥登录。') &&
+        !normalized.includes('NEW_PORT="{{ssh_port}}"'))
     )
   }
 

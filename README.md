@@ -206,7 +206,27 @@ Android 移动端还需要：
 
 - Android Studio
 - Android SDK / Build Tools
-- JDK 21（当前 Android 工程使用 Java 21 编译选项）
+- JDK 21.x（当前 Android 工程使用 Java 21 编译选项）
+
+当前 Android 工程版本基线：
+
+| 项目 | 要求 |
+| --- | --- |
+| Node.js | 18+ |
+| Capacitor | 8.x |
+| Gradle Wrapper | 8.14.3 |
+| Android Gradle Plugin | 8.13.0 |
+| Android SDK | compileSdk 36 / targetSdk 36 / minSdk 24 |
+| Java/JDK | 21.x，推荐使用 Android Studio 自带 JBR 21 |
+
+如果出现 `无效的源发行版：21`，说明当前命令行正在使用 JDK 17 或更低版本。PowerShell 可临时切换到 Android Studio 自带 JDK 21：
+
+```powershell
+$env:JAVA_HOME='D:\Program Files\Android\Android Studio\jbr'
+$env:Path="$env:JAVA_HOME\bin;$env:Path"
+java -version
+javac -version
+```
 
 ### 安装依赖
 
@@ -269,19 +289,24 @@ npm run build
 Android 端打包流程：
 
 ```bash
-npm run mobile:typecheck
-npm run android:sync
-npm run android:open
+npm run android:build
 ```
 
-在 Android Studio 中选择 `Build > Build Bundle(s) / APK(s) > Build APK(s)` 生成调试 APK，或选择 `Generate Signed Bundle / APK` 配置签名后生成发布包。也可以在 `android/` 目录执行：
+该命令会依次执行移动端类型检查、同步 Android 工程、生成调试 APK。调试 APK 通常输出到 `android/app/build/outputs/apk/debug/`。
+
+也可以按目标包类型执行：
 
 ```bash
-.\gradlew assembleDebug
-.\gradlew bundleRelease
+npm run android:build:debug
+npm run android:build:release
+npm run android:build:bundle
 ```
 
-调试 APK 通常输出到 `android/app/build/outputs/apk/debug/`；发布包需要配置正式签名文件，签名文件不应提交到仓库。
+发布包需要配置正式签名文件，签名文件不应提交到仓库。需要打开 Android Studio 时执行：
+
+```bash
+npm run android:open
+```
 
 ## 🔐 安全性
 

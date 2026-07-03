@@ -28,9 +28,36 @@ npm run android:open
 - npm
 - Android Studio
 - Android SDK / Build Tools
-- JDK 21
+- JDK 21.x
 
 当前 Android 工程的 Gradle 编译选项使用 Java 21。不要使用 JDK 17 直接打包，否则会出现 `无效的源发行版：21`；也不建议使用高于 Android Gradle 插件兼容范围太多的 JDK 版本。
+
+当前 Android 工程版本基线：
+
+| 项目 | 当前要求 |
+| --- | --- |
+| Node.js | 18+ |
+| Capacitor | 8.x |
+| Gradle Wrapper | 8.14.3 |
+| Android Gradle Plugin | 8.13.0 |
+| Android SDK | compileSdk 36 / targetSdk 36 / minSdk 24 |
+| Java/JDK | 21.x，推荐使用 Android Studio 自带 JBR 21 |
+
+PowerShell 临时切换 JDK 示例，只影响当前终端窗口：
+
+```powershell
+$env:JAVA_HOME='D:\Program Files\Android\Android Studio\jbr'
+$env:Path="$env:JAVA_HOME\bin;$env:Path"
+java -version
+javac -version
+```
+
+确认输出为 `21.x` 后，再执行：
+
+```powershell
+.\gradlew --stop
+.\gradlew assembleDebug
+```
 
 ## 本地开发
 
@@ -79,31 +106,37 @@ npm run android:sync
 
 ## 打包 APK / AAB
 
-先同步 Android 工程：
+一键生成调试 APK：
 
 ```bash
-npm run android:sync
+npm run android:build
 ```
 
-然后打开 Android Studio：
+该命令会依次执行 `mobile:typecheck`、`android:sync` 和 Gradle `assembleDebug`。调试 APK 输出目录通常是：
+
+```text
+android/app/build/outputs/apk/debug/
+```
+
+按目标包类型也可以执行：
+
+```bash
+npm run android:build:debug
+npm run android:build:release
+npm run android:build:bundle
+```
+
+需要打开 Android Studio 时：
 
 ```bash
 npm run android:open
 ```
 
-调试包：
+也可以继续手动执行分步命令：
 
-- 在 Android Studio 中选择 `Build > Build Bundle(s) / APK(s) > Build APK(s)`
-- 或在 `android/` 目录执行：
-
-```powershell
-.\gradlew assembleDebug
-```
-
-调试 APK 输出目录通常是：
-
-```text
-android/app/build/outputs/apk/debug/
+```bash
+npm run mobile:typecheck
+npm run android:sync
 ```
 
 发布包：
@@ -130,6 +163,17 @@ android/app/build/outputs/apk/debug/
 - 发布包确认已使用正式签名
 
 ## 常见问题
+
+### 打包提示 `无效的源发行版：21`
+
+这是当前命令行使用的 Java 版本低于 21 导致的。先执行：
+
+```powershell
+java -version
+javac -version
+```
+
+如果输出是 `17.x` 或更低，按上方环境要求中的 PowerShell 示例临时切换到 JDK 21，再执行 `.\gradlew --stop` 后重新打包。
 
 ### Android 手势返回直接退出
 

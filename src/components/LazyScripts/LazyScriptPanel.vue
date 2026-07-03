@@ -35,6 +35,11 @@
       </div>
 
       <div class="script-actions">
+        <el-tooltip content="使用详情" placement="top">
+          <el-button class="usage-guide-button" :icon="QuestionFilled" @click="showUsageGuide = true">
+            使用详情
+          </el-button>
+        </el-tooltip>
         <el-tooltip content="导入脚本库" placement="top">
           <el-button :icon="Upload" @click="importScripts" />
         </el-tooltip>
@@ -484,6 +489,163 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="showUsageGuide"
+      title="懒人脚本使用详情"
+      width="820px"
+      class="lazy-script-guide-dialog"
+    >
+      <div class="usage-guide">
+        <section class="guide-section">
+          <h3>脚本是什么</h3>
+          <p>
+            懒人脚本用于保存常用的 Shell 脚本或单条命令。Shell 脚本会先部署到远程主机
+            <code>~/.mshell/scripts</code>，再通过 <code>bash 脚本文件</code> 运行。
+          </p>
+        </section>
+
+        <section class="guide-section">
+          <h3>脚本类型</h3>
+          <div class="guide-grid">
+            <div>
+              <strong>单条命令</strong>
+              <p>适合一行即可完成的命令，运行时直接发送到终端。</p>
+            </div>
+            <div>
+              <strong>Shell 脚本</strong>
+              <p>适合多行逻辑，会按文件名部署为远程脚本后运行。</p>
+            </div>
+            <div>
+              <strong>操作步骤</strong>
+              <p>适合记录人工操作流程，仍按脚本文本保存和引用。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="guide-section">
+          <h3>变量用法</h3>
+          <p>
+            脚本内容支持 <code v-pre>{{变量名}}</code> 和 <code>${变量名}</code> 两种占位符。
+            变量名只能使用字母、数字和下划线，且不能以数字开头。
+          </p>
+          <pre><code v-pre>NEW_PORT="{{ssh_port}}"
+TARGET_USER="${username}"
+echo "将 SSH 端口修改为 $NEW_PORT"</code></pre>
+        </section>
+
+        <section class="guide-section">
+          <h3>变量配置</h3>
+          <ul>
+            <li><strong>变量名</strong>：必须和脚本里的占位符一致，例如 <code>ssh_port</code>。</li>
+            <li><strong>显示名称</strong>：展示给用户看的输入项名称，例如 <code>SSH 端口</code>。</li>
+            <li><strong>类型</strong>：支持文本、数字、密码、多行文本和选项。</li>
+            <li><strong>默认值</strong>：打开脚本时自动填入，可按需修改。</li>
+            <li><strong>必填</strong>：运行前会检查，避免空变量直接写进脚本。</li>
+          </ul>
+        </section>
+
+        <section class="guide-section">
+          <h3>按钮区别</h3>
+          <div class="guide-grid">
+            <div>
+              <strong>复制运行命令</strong>
+              <p>复制 <code>bash ~/.mshell/scripts/xxx.sh</code>，适合手动粘贴执行。</p>
+            </div>
+            <div>
+              <strong>复制部署命令</strong>
+              <p>复制完整部署脚本，会创建远程文件并写入内容。</p>
+            </div>
+            <div>
+              <strong>部署到终端</strong>
+              <p>只把脚本文件写到远程主机，不立即运行。</p>
+            </div>
+            <div>
+              <strong>运行脚本</strong>
+              <p>未部署时先部署，再运行远程脚本文件。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="guide-section">
+          <h3>推荐模板</h3>
+          <pre><code v-pre>set -e
+TARGET_USER="{{username}}"
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "请使用 root 权限执行该脚本。"
+  exit 1
+fi
+
+echo "当前用户: $TARGET_USER"</code></pre>
+        </section>
+
+        <section class="guide-section">
+          <h3>注意事项</h3>
+          <ul>
+            <li>高风险脚本建议先备份配置，再执行修改。</li>
+            <li>修改 SSH、防火墙、用户权限前，建议保留当前连接并另开窗口测试。</li>
+            <li>脚本文件名建议统一使用英文、数字和短横线，例如 <code>init-ssh.sh</code>。</li>
+            <li>变量替换只是文本替换，脚本里仍要自行处理引号和参数安全。</li>
+          </ul>
+        </section>
+      </div>
+
+      <template #footer>
+        <el-button type="primary" @click="showUsageGuide = false">知道了</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="showTargetTerminalDialog"
+      title="确认目标终端"
+      width="560px"
+      class="lazy-script-target-dialog"
+      :close-on-click-modal="false"
+      @closed="cancelTargetTerminalSelection"
+    >
+      <div class="target-terminal-panel">
+        <div class="target-terminal-summary">
+          <span>即将{{ targetTerminalActionText }}</span>
+          <strong>{{ selectedScript?.name || '未命名脚本' }}</strong>
+        </div>
+
+        <el-form label-position="top">
+          <el-form-item label="目标终端">
+            <el-select
+              v-model="selectedTargetTerminalId"
+              class="target-terminal-select"
+              placeholder="请选择要运行的 SSH 终端"
+              filterable
+            >
+              <el-option
+                v-for="tab in sshTerminalTabs"
+                :key="tab.id"
+                :label="formatTerminalLabel(tab)"
+                :value="tab.id"
+              >
+                <div class="target-terminal-option">
+                  <span>{{ tab.name || `${tab.session.username}@${tab.session.host}` }}</span>
+                  <small>{{ formatTerminalMeta(tab) }}</small>
+                </div>
+              </el-option>
+            </el-select>
+          </el-form-item>
+        </el-form>
+
+        <div v-if="selectedTargetTerminal" class="target-terminal-card">
+          <span>{{ selectedTargetTerminal.name || selectedTargetTerminal.session.name }}</span>
+          <code>{{ formatTerminalMeta(selectedTargetTerminal) }}</code>
+        </div>
+      </div>
+
+      <template #footer>
+        <el-button @click="cancelTargetTerminalSelection">取消</el-button>
+        <el-button type="primary" @click="confirmTargetTerminalSelection">
+          确认{{ targetTerminalActionText }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -498,12 +660,13 @@ import {
   MagicStick,
   Plus,
   Promotion,
+  QuestionFilled,
   Refresh,
   Search,
   Upload,
   VideoPlay
 } from '@element-plus/icons-vue'
-import { useAppStore } from '@/stores/app'
+import { useAppStore, type Tab } from '@/stores/app'
 import { terminalManager } from '@/utils/terminal-manager'
 
 type LazyScriptType = 'command' | 'shell' | 'steps'
@@ -563,6 +726,8 @@ const loading = ref(false)
 const saving = ref(false)
 const executingScript = ref(false)
 const showEditor = ref(false)
+const showUsageGuide = ref(false)
+const showTargetTerminalDialog = ref(false)
 const editingScriptId = ref('')
 const sshKeys = ref<SSHKey[]>([])
 const sshKeysLoading = ref(false)
@@ -603,12 +768,30 @@ const manualKeyForm = reactive({
   comment: ''
 })
 
-const hasActiveTerminal = computed(() => Boolean(appStore.activeTab))
+type TargetTerminalIntent = 'deploy' | 'run' | 'send-command'
+
+const selectedTargetTerminalId = ref('')
+const targetTerminalIntent = ref<TargetTerminalIntent>('run')
+let resolveTargetTerminalSelection: ((terminalId: string | null) => void) | null = null
+
+const sshTerminalTabs = computed(() => appStore.tabs.filter(isSshTerminalTab))
+const hasActiveTerminal = computed(() => sshTerminalTabs.value.length > 0)
 const isCommandScript = computed(() => selectedScript.value?.type === 'command')
 const activeTerminalText = computed(() => {
-  const tab = appStore.tabs.find((item) => item.id === appStore.activeTab)
+  const tab = sshTerminalTabs.value.find((item) => item.id === appStore.activeTab)
   if (!tab) return '未选择终端'
-  return `当前终端：${tab.session.username}@${tab.session.host}`
+  return `当前终端：${formatTerminalMeta(tab)}`
+})
+const selectedTargetTerminal = computed(
+  () => sshTerminalTabs.value.find((tab) => tab.id === selectedTargetTerminalId.value) || null
+)
+const targetTerminalActionText = computed(() => {
+  const labels: Record<TargetTerminalIntent, string> = {
+    deploy: '部署到终端',
+    run: '运行脚本',
+    'send-command': '发送命令'
+  }
+  return labels[targetTerminalIntent.value]
 })
 
 const activeScriptFileName = computed(() =>
@@ -1069,15 +1252,18 @@ const deployScript = async () => {
     return
   }
 
+  const targetTerminalId = await requestTargetTerminal('deploy')
+  if (!targetTerminalId) return
+
   executingScript.value = true
   try {
     const result = await window.electronAPI.ssh.executeCommand(
-      appStore.activeTab,
+      targetTerminalId,
       buildDeployCommand(),
       scriptExecutionTimeoutMs
     )
 
-    writeScriptResultToTerminal('部署脚本', result)
+    writeScriptResultToTerminal('部署脚本', result, targetTerminalId)
 
     if (!result.success) {
       ElMessage.error(result.error || '部署失败')
@@ -1085,19 +1271,23 @@ const deployScript = async () => {
     }
 
     await markUsed()
-    ElMessage.success('脚本已静默部署到远程主机')
+    ElMessage.success(`脚本已静默部署到 ${formatTargetTerminalName(targetTerminalId)}`)
   } finally {
     executingScript.value = false
   }
 }
 
 const runScript = async () => {
-  if (!selectedScript.value || !validateTerminalReady() || !validateRequiredVariables() || executingScript.value) return
+  const script = selectedScript.value
+  if (!script || !validateTerminalReady() || !validateRequiredVariables() || executingScript.value) return
 
-  if (selectedScript.value.riskLevel === 'high') {
+  const targetTerminalId = await requestTargetTerminal(script.type === 'command' ? 'send-command' : 'run')
+  if (!targetTerminalId) return
+
+  if (script.riskLevel === 'high') {
     try {
       await ElMessageBox.confirm(
-        `这是高风险${isCommandScript.value ? '命令' : '脚本'}，确认${isCommandScript.value ? '运行' : '同步最新脚本并运行'}吗？`,
+        `这是高风险${script.type === 'command' ? '命令' : '脚本'}，确认${script.type === 'command' ? '运行' : '同步最新脚本并运行'}吗？`,
         '高风险确认',
         {
           type: 'warning'
@@ -1108,23 +1298,23 @@ const runScript = async () => {
     }
   }
 
-  if (isCommandScript.value) {
-    terminalManager.requestScrollToBottom(appStore.activeTab)
-    window.electronAPI.ssh.write(appStore.activeTab, ensureTrailingNewline(buildRunCommand()))
+  if (script.type === 'command') {
+    terminalManager.requestScrollToBottom(targetTerminalId)
+    window.electronAPI.ssh.write(targetTerminalId, ensureTrailingNewline(buildRunCommand()))
     await markUsed()
-    ElMessage.success('命令已发送到当前终端')
+    ElMessage.success(`命令已发送到 ${formatTargetTerminalName(targetTerminalId)}`)
     return
   }
 
   executingScript.value = true
   try {
     const result = await window.electronAPI.ssh.executeCommand(
-      appStore.activeTab,
-      await buildSilentRunCommand(),
+      targetTerminalId,
+      await buildSilentRunCommand(targetTerminalId),
       scriptExecutionTimeoutMs
     )
 
-    writeScriptResultToTerminal('运行脚本', result)
+    writeScriptResultToTerminal('运行脚本', result, targetTerminalId)
 
     if (!result.success) {
       ElMessage.error(result.error || '脚本运行失败')
@@ -1132,10 +1322,140 @@ const runScript = async () => {
     }
 
     await markUsed()
-    ElMessage.success('脚本已运行，结果已输出到当前终端')
+    ElMessage.success(`脚本已运行，结果已输出到 ${formatTargetTerminalName(targetTerminalId)}`)
+    await maybeUpdateActiveSessionPortAfterSuccessfulRun(script, targetTerminalId)
   } finally {
     executingScript.value = false
   }
+}
+
+const maybeUpdateActiveSessionPortAfterSuccessfulRun = async (
+  script: LazyScript,
+  targetTerminalId: string
+) => {
+  if (!isSshPortUpdateScript(script)) return
+
+  const session = getTerminalTab(targetTerminalId)?.session || null
+  if (!session || (session.type && session.type !== 'ssh')) return
+
+  const nextPort = parseSshPortVariable()
+  if (!nextPort || session.port === nextPort) return
+
+  try {
+    await ElMessageBox.confirm(
+      `远程 SSH 端口脚本已执行成功。是否将当前会话「${session.name || session.host}」的连接端口从 ${session.port} 更新为 ${nextPort}？当前已建立的连接不会重连，重新连接时使用新端口。`,
+      '同步会话端口',
+      {
+        type: 'warning',
+        confirmButtonText: '更新端口',
+        cancelButtonText: '暂不更新'
+      }
+    )
+  } catch {
+    return
+  }
+
+  try {
+    const isSavedSession = appStore.sessions.some((item) => item.id === session.id)
+    if (isSavedSession) {
+      await appStore.updateSession(session.id, { port: nextPort })
+    }
+
+    updateOpenTabsSessionPort(session.id, nextPort)
+    ElMessage.success(
+      isSavedSession
+        ? `当前会话连接端口已更新为 ${nextPort}`
+        : `当前终端标签连接端口已更新为 ${nextPort}`
+    )
+  } catch (error: any) {
+    ElMessage.error('更新会话端口失败: ' + error.message)
+  }
+}
+
+const isSshPortUpdateScript = (script: LazyScript) => {
+  const fileName = normalizeScriptFileName(script.fileName)
+  const scriptName = script.name.trim()
+  return (
+    fileName === 'change-ssh-port.sh' ||
+    fileName === 'enable-ssh-password-login.sh' ||
+    scriptName === '修改 SSH 端口并重启' ||
+    scriptName === '开启 SSH 密码登录'
+  )
+}
+
+const parseSshPortVariable = () => {
+  const rawPort =
+    numberExecutionValues.ssh_port === undefined || numberExecutionValues.ssh_port === null
+      ? executionValues.ssh_port
+      : numberExecutionValues.ssh_port
+  const port = Number(String(rawPort || '').trim())
+  return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : null
+}
+
+const updateOpenTabsSessionPort = (sessionId: string, port: number) => {
+  appStore.tabs.forEach((tab) => {
+    if (tab.session.id === sessionId) {
+      tab.session = { ...tab.session, port }
+    }
+  })
+}
+
+const requestTargetTerminal = async (intent: TargetTerminalIntent): Promise<string | null> => {
+  if (!validateTerminalReady()) return null
+
+  targetTerminalIntent.value = intent
+  selectedTargetTerminalId.value = getDefaultTargetTerminalId()
+
+  if (!selectedTargetTerminalId.value) {
+    ElMessage.warning('请先打开一个 SSH 终端')
+    return null
+  }
+
+  showTargetTerminalDialog.value = true
+  return new Promise((resolve) => {
+    resolveTargetTerminalSelection = resolve
+  })
+}
+
+const confirmTargetTerminalSelection = () => {
+  if (!selectedTargetTerminalId.value || !selectedTargetTerminal.value) {
+    ElMessage.warning('请选择目标终端')
+    return
+  }
+  finishTargetTerminalSelection(selectedTargetTerminalId.value)
+}
+
+const cancelTargetTerminalSelection = () => {
+  finishTargetTerminalSelection(null)
+}
+
+const finishTargetTerminalSelection = (terminalId: string | null) => {
+  if (!resolveTargetTerminalSelection) return
+  const resolve = resolveTargetTerminalSelection
+  resolveTargetTerminalSelection = null
+  showTargetTerminalDialog.value = false
+  resolve(terminalId)
+}
+
+const getDefaultTargetTerminalId = () => {
+  const activeTerminal = sshTerminalTabs.value.find((tab) => tab.id === appStore.activeTab)
+  return activeTerminal?.id || sshTerminalTabs.value[0]?.id || ''
+}
+
+const isSshTerminalTab = (tab: Tab) => !tab.session.type || tab.session.type === 'ssh'
+
+const getTerminalTab = (terminalId: string) =>
+  appStore.tabs.find((tab) => tab.id === terminalId && isSshTerminalTab(tab)) || null
+
+const formatTerminalLabel = (tab: Tab) =>
+  `${tab.name || `${tab.session.username}@${tab.session.host}`} - ${formatTerminalMeta(tab)}`
+
+const formatTerminalMeta = (tab: Tab) =>
+  `${tab.session.username}@${tab.session.host}:${tab.session.port || 22}`
+
+const formatTargetTerminalName = (terminalId: string) => {
+  const tab = getTerminalTab(terminalId)
+  return tab ? formatTerminalMeta(tab) : '目标终端'
 }
 
 const markUsed = async () => {
@@ -1144,15 +1464,15 @@ const markUsed = async () => {
   selectedScript.value.usageCount += 1
 }
 
-const buildSilentRunCommand = async () => {
+const buildSilentRunCommand = async (targetTerminalId: string) => {
   const command = buildCheckedRunCommand({ showSyncMessage: false })
-  const currentDir = await resolveCurrentTerminalDirectory()
+  const currentDir = await resolveCurrentTerminalDirectory(targetTerminalId)
   return currentDir ? `cd ${shellQuote(currentDir)} && ${command}` : command
 }
 
-const resolveCurrentTerminalDirectory = async () => {
+const resolveCurrentTerminalDirectory = async (targetTerminalId: string) => {
   try {
-    const result = await window.electronAPI.ssh.getCurrentDirectory(appStore.activeTab)
+    const result = await window.electronAPI.ssh.getCurrentDirectory(targetTerminalId)
     return result.success && result.data ? result.data.trim() : ''
   } catch {
     return ''
@@ -1161,7 +1481,8 @@ const resolveCurrentTerminalDirectory = async () => {
 
 const writeScriptResultToTerminal = (
   action: string,
-  result: { success: boolean; data?: string; error?: string }
+  result: { success: boolean; data?: string; error?: string },
+  targetTerminalId: string
 ) => {
   const scriptName = selectedScript.value?.name || '未命名脚本'
   const scriptPath = isCommandScript.value ? '单条命令' : remoteScriptPath.value
@@ -1187,7 +1508,7 @@ const writeScriptResultToTerminal = (
     ''
   ].join('\n')
 
-  terminalManager.writeLocalOutput(appStore.activeTab, toTerminalLineEndings(block))
+  terminalManager.writeLocalOutput(targetTerminalId, toTerminalLineEndings(block))
 }
 
 const formatCommandError = (error?: string) => {
@@ -1480,6 +1801,11 @@ const toTerminalLineEndings = (value: string) =>
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
+}
+
+.usage-guide-button {
+  grid-column: 1 / -1;
+  width: 100%;
 }
 
 .script-list {
@@ -1923,6 +2249,180 @@ const toTerminalLineEndings = (value: string) =>
   grid-column: auto;
 }
 
+.usage-guide {
+  display: flex;
+  max-height: 68vh;
+  flex-direction: column;
+  gap: 16px;
+  overflow: auto;
+  padding-right: 6px;
+}
+
+.guide-section {
+  padding: 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+}
+
+.guide-section h3 {
+  margin: 0 0 10px;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.guide-section p,
+.guide-section li {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.guide-section ul {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.guide-section code {
+  padding: 2px 5px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.guide-section pre {
+  overflow: auto;
+  margin: 10px 0 0;
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--terminal-bg, #101418);
+  color: var(--terminal-foreground, #e7eef7);
+}
+
+.guide-section pre code {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre;
+}
+
+.guide-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.guide-grid > div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+}
+
+.guide-grid strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.target-terminal-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.target-terminal-summary {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+}
+
+.target-terminal-summary span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.target-terminal-summary strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-terminal-select {
+  width: 100%;
+}
+
+.target-terminal-option {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.target-terminal-option span {
+  overflow: hidden;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-terminal-option small {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-terminal-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+}
+
+.target-terminal-card span {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-terminal-card code {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 :global(:root.app-appearance-terminal .lazy-script-panel) {
   grid-template-columns: 190px minmax(240px, 330px) minmax(0, 1fr);
 }
@@ -2017,6 +2517,7 @@ const toTerminalLineEndings = (value: string) =>
 
   .form-grid.two,
   .form-grid.three,
+  .guide-grid,
   .variable-row {
     grid-template-columns: 1fr;
   }
@@ -2124,6 +2625,7 @@ const toTerminalLineEndings = (value: string) =>
 
   .form-grid.two,
   .form-grid.three,
+  .guide-grid,
   .variable-row {
     grid-template-columns: 1fr;
   }
