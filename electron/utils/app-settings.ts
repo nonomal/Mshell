@@ -129,11 +129,11 @@ class AppSettingsManager {
         autoReconnect: true,
         maxReconnectAttempts: 3,
         reconnectInterval: 5,
-        commandAutocomplete: true,
-        aiCommandSuggest: true,
+        commandAutocomplete: false,
+        aiCommandSuggest: false,
         riskWarning: true,
         commandCorrection: true,
-        commandExplain: true
+        commandExplain: false
       },
       security: {
         savePasswords: true,

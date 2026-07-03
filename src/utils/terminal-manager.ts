@@ -18,6 +18,24 @@ type RendererType = 'auto' | 'webgl' | 'canvas' | 'dom'
 const hasBackgroundImage = (options: any) =>
   options?.background?.enabled === true && !!options.background.image
 
+const ANSI_ESCAPE_PATTERN = /\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g
+
+const stripTerminalControlSequences = (text: string) =>
+  text.replace(ANSI_ESCAPE_PATTERN, '').replace(/\r/g, '\n')
+
+export const isSensitiveInputPrompt = (text: string): boolean => {
+  const normalized = stripTerminalControlSequences(text).replace(/\s+/g, ' ').trim()
+  if (!normalized) return false
+
+  return [
+    /(?:^|\b)(?:password|passphrase|passcode|pin|otp|verification code|auth(?:entication)? code|secret)\s*[:：]?/i,
+    /(?:sudo|su).*password\s*[:：]?/i,
+    /(?:enter|input|type|repeat|retype|confirm|current|new).*(?:password|passphrase|pin|otp|code|secret)\s*[:：]?/i,
+    /(?:密码|口令|密钥短语|私钥密码|验证码|动态口令|一次性密码)\s*[:：]?/i,
+    /(?:输入|请输入|确认|重复|当前|新的).*(?:密码|口令|密钥|验证码)\s*[:：]?/i
+  ].some((pattern) => pattern.test(normalized))
+}
+
 const parseHexColor = (value?: string): { red: number; green: number; blue: number } | null => {
   if (!value) return null
 
@@ -313,7 +331,7 @@ class TerminalManager {
           }
           // 检测密码输入模式：服务器输出包含密码提示关键词时禁用补全
           // 常见密码提示：password:, Password:, passphrase:, Enter password 等
-          if (/password\s*:|passphrase\s*:|enter.*password|pin\s*:/i.test(strForDetect)) {
+          if (isSensitiveInputPrompt(strForDetect)) {
             instance.echoEnabled = false
           }
           // 检测命令提示符（说明密码输入已完成，恢复补全）

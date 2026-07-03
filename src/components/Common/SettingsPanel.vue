@@ -377,7 +377,7 @@
               </el-form-item>
               <el-form-item label="命令解释">
                 <el-switch v-model="settings.ssh.commandExplain" />
-                <span class="form-hint">输入 ?命令 或 命令? 查看命令解释</span>
+                <span class="form-hint">输入 ?命令 查看命令解释</span>
               </el-form-item>
             </el-form>
           </div>
@@ -1462,9 +1462,9 @@ const settings = ref({
     autoReconnect: true,
     maxReconnectAttempts: 3,
     reconnectInterval: 5,
-    commandAutocomplete: true,
-    aiCommandSuggest: true,
-    commandExplain: true
+    commandAutocomplete: false,
+    aiCommandSuggest: false,
+    commandExplain: false
   },
   sftp: {
     maxConcurrentTransfers: 3,

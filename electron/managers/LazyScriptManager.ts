@@ -5,7 +5,13 @@ import { BaseManager } from './BaseManager'
 export type LazyScriptType = 'command' | 'shell' | 'steps'
 export type LazyScriptRunMode = 'copy' | 'paste' | 'execute'
 export type LazyScriptRiskLevel = 'low' | 'medium' | 'high'
-export type LazyScriptVariableType = 'text' | 'number' | 'password' | 'textarea' | 'select'
+export type LazyScriptVariableType =
+  | 'text'
+  | 'number'
+  | 'password'
+  | 'textarea'
+  | 'select'
+  | 'multiselect'
 
 export interface LazyScriptVariable {
   name: string
@@ -42,6 +48,137 @@ const ENABLE_SSH_PASSWORD_SCRIPT_DESCRIPTION =
   '开启 SSH 密码与交互式密码认证，可同时设置 SSH 端口，适合临时测试后再关闭。'
 const CHANGE_LOGIN_PASSWORD_SCRIPT_DESCRIPTION =
   '为指定 Linux 用户修改登录密码，适合临时重置或初始化账号密码。'
+const INSTALL_BASIC_TOOLS_SCRIPT_DESCRIPTION =
+  '按分类选择单个工具安装 sudo、网络诊断、压缩解压、监控排障等常用基础工具，并支持额外包名。'
+const INSTALL_BASIC_TOOLS_DEFAULT_TOOLS = 'sudo,curl,wget,tar,gzip,vim,nano'
+const PREVIOUS_INSTALL_BASIC_TOOLS_DEFAULT_TOOLS =
+  'sudo,curl,wget,vim,git,jq,tree,rsync,zip,unzip'
+const INSTALL_BASIC_TOOLS_SCRIPT_VARIABLES: LazyScriptVariable[] = [
+  {
+    name: 'tools',
+    label: '工具',
+    type: 'multiselect',
+    defaultValue: INSTALL_BASIC_TOOLS_DEFAULT_TOOLS,
+    required: true,
+    options: [
+      'sudo|基础工具|sudo',
+      'curl|基础工具|curl',
+      'wget|基础工具|wget',
+      'ca-certificates|基础工具|CA 证书',
+      'gnupg|基础工具|GnuPG',
+      'vim|基础工具|vim',
+      'nano|基础工具|nano',
+      'less|基础工具|less',
+      'bash-completion|基础工具|bash-completion',
+      'git|基础工具|git',
+      'jq|基础工具|jq',
+      'tree|基础工具|tree',
+      'rsync|基础工具|rsync',
+      'tar|基础工具|tar',
+      'gzip|基础工具|gzip',
+      'openssh-client|管理权限|SSH 客户端',
+      'openssh-server|管理权限|SSH 服务端',
+      'cron|管理权限|cron 定时任务',
+      'acl|管理权限|ACL 权限工具',
+      'passwd|管理权限|passwd/shadow',
+      'adduser|管理权限|用户创建工具',
+      'dig|网络诊断|dig/nslookup',
+      'ping|网络诊断|ping',
+      'iproute|网络诊断|ip/ss',
+      'net-tools|网络诊断|ifconfig/netstat',
+      'traceroute|网络诊断|traceroute',
+      'tcpdump|网络诊断|tcpdump',
+      'nmap|网络诊断|nmap',
+      'socat|网络诊断|socat',
+      'telnet|网络诊断|telnet',
+      'mtr|网络诊断|mtr',
+      'netcat|网络诊断|netcat',
+      'zip|压缩解压|zip',
+      'unzip|压缩解压|unzip',
+      'xz|压缩解压|xz',
+      'bzip2|压缩解压|bzip2',
+      'p7zip|压缩解压|7z/p7zip',
+      'htop|监控排障|htop',
+      'iotop|监控排障|iotop',
+      'iftop|监控排障|iftop',
+      'sysstat|监控排障|sysstat',
+      'lsof|监控排障|lsof',
+      'strace|监控排障|strace',
+      'psmisc|监控排障|psmisc',
+      'procps|监控排障|procps',
+      'ncdu|监控排障|ncdu',
+      'parted|磁盘工具|parted',
+      'gdisk|磁盘工具|gdisk',
+      'smartmontools|磁盘工具|smartmontools',
+      'build-essential|编译工具|编译基础套件',
+      'make|编译工具|make',
+      'gcc|编译工具|gcc',
+      'gpp|编译工具|g++',
+      'pkg-config|编译工具|pkg-config',
+      'cmake|编译工具|cmake',
+      'autoconf|编译工具|autoconf',
+      'automake|编译工具|automake',
+      'python3|Python|python3',
+      'python3-pip|Python|pip',
+      'python3-venv|Python|venv',
+      'python3-dev|Python|dev headers',
+      'nodejs|Node.js|nodejs',
+      'npm|Node.js|npm',
+      'fail2ban|安全辅助|fail2ban',
+      'ufw|安全辅助|ufw',
+      'firewalld|安全辅助|firewalld',
+      'openssl|安全辅助|openssl'
+    ]
+  },
+  {
+    name: 'extra_packages',
+    label: '额外包名',
+    type: 'text',
+    defaultValue: ''
+  }
+]
+const AUTO_CHANGE_MIRROR_SCRIPT_DESCRIPTION =
+  '自动检测 Linux 发行版与公网 IP 地区，基于内置规则更换合适的软件源。'
+const AUTO_CHANGE_MIRROR_SCRIPT_VARIABLES: LazyScriptVariable[] = [
+  {
+    name: 'region_mode',
+    label: '地区模式',
+    type: 'select',
+    defaultValue: 'auto',
+    required: true,
+    options: ['auto', 'cn', 'abroad', 'edu']
+  },
+  {
+    name: 'mirror_source',
+    label: '镜像站',
+    type: 'select',
+    defaultValue: 'auto',
+    required: true,
+    options: ['auto', 'aliyun', 'ustc', 'tencent', 'huawei', 'tsinghua', 'official', 'custom']
+  },
+  {
+    name: 'custom_source',
+    label: '自定义源域名',
+    type: 'text',
+    defaultValue: ''
+  },
+  {
+    name: 'upgrade_software',
+    label: '升级软件包',
+    type: 'select',
+    defaultValue: 'false',
+    required: true,
+    options: ['false', 'true']
+  },
+  {
+    name: 'print_diff',
+    label: '打印源文件差异',
+    type: 'select',
+    defaultValue: 'false',
+    required: true,
+    options: ['false', 'true']
+  }
+]
 const SSH_PORT_VARIABLE: LazyScriptVariable = {
   name: 'ssh_port',
   label: 'SSH 端口',
@@ -1540,6 +1677,696 @@ printf '%s:%s\\n' "$TARGET_USER" "$NEW_PASSWORD" | chpasswd
 echo "用户 $TARGET_USER 的登录密码已修改。"
 echo "请使用新密码另开窗口测试登录后，再关闭当前连接。"`
 
+const OLD_INSTALL_BASIC_TOOLS_SCRIPT_CONTENT = `set -e
+PACKAGES="{{packages}}"
+
+if command -v apt-get >/dev/null 2>&1; then
+  apt-get update
+  apt-get install -y $PACKAGES
+elif command -v dnf >/dev/null 2>&1; then
+  dnf install -y $PACKAGES
+elif command -v yum >/dev/null 2>&1; then
+  yum install -y $PACKAGES
+elif command -v apk >/dev/null 2>&1; then
+  apk add --no-cache $PACKAGES
+else
+  echo "未检测到已支持的包管理器。"
+  exit 1
+fi`
+
+const INSTALL_BASIC_TOOLS_SCRIPT_CONTENT = `set -e
+TOOLS="{{tools}}"
+EXTRA_PACKAGES="{{extra_packages}}"
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "请使用 root 权限执行该脚本。"
+  exit 1
+fi
+
+if command -v apt-get >/dev/null 2>&1; then
+  PKG_MANAGER="apt"
+elif command -v dnf >/dev/null 2>&1; then
+  PKG_MANAGER="dnf"
+elif command -v yum >/dev/null 2>&1; then
+  PKG_MANAGER="yum"
+elif command -v apk >/dev/null 2>&1; then
+  PKG_MANAGER="apk"
+else
+  echo "未检测到已支持的包管理器。当前脚本支持 apt、dnf、yum、apk。"
+  exit 1
+fi
+
+PACKAGES=""
+FAILED_PACKAGES=""
+INSTALLED_COUNT=0
+
+add_pkg() {
+  PKG="$1"
+  [ -n "$PKG" ] || return 0
+  case " $PACKAGES " in
+    *" $PKG "*) ;;
+    *) PACKAGES="$PACKAGES $PKG" ;;
+  esac
+}
+
+add_pkg_list() {
+  for PKG in $1; do
+    add_pkg "$PKG"
+  done
+}
+
+add_by_manager() {
+  case "$PKG_MANAGER" in
+    apt) add_pkg_list "$1" ;;
+    dnf|yum) add_pkg_list "$2" ;;
+    apk) add_pkg_list "$3" ;;
+  esac
+}
+
+add_tool() {
+  case "$1" in
+    sudo) add_by_manager "sudo" "sudo" "sudo" ;;
+    curl) add_by_manager "curl" "curl" "curl" ;;
+    wget) add_by_manager "wget" "wget" "wget" ;;
+    ca-certificates) add_by_manager "ca-certificates" "ca-certificates" "ca-certificates" ;;
+    gnupg) add_by_manager "gnupg" "gnupg2" "gnupg" ;;
+    vim) add_by_manager "vim" "vim" "vim" ;;
+    nano) add_by_manager "nano" "nano" "nano" ;;
+    less) add_by_manager "less" "less" "less" ;;
+    bash-completion) add_by_manager "bash-completion" "bash-completion" "bash-completion" ;;
+    git) add_by_manager "git" "git" "git" ;;
+    jq) add_by_manager "jq" "jq" "jq" ;;
+    tree) add_by_manager "tree" "tree" "tree" ;;
+    rsync) add_by_manager "rsync" "rsync" "rsync" ;;
+    tar) add_by_manager "tar" "tar" "tar" ;;
+    gzip) add_by_manager "gzip" "gzip" "gzip" ;;
+    openssh-client) add_by_manager "openssh-client" "openssh-clients" "openssh-client" ;;
+    openssh-server) add_by_manager "openssh-server" "openssh-server" "openssh-server" ;;
+    cron) add_by_manager "cron" "cronie" "dcron" ;;
+    acl) add_by_manager "acl" "acl" "acl" ;;
+    passwd) add_by_manager "passwd" "passwd" "shadow" ;;
+    adduser) add_by_manager "adduser" "shadow-utils" "shadow" ;;
+    dig) add_by_manager "dnsutils" "bind-utils" "bind-tools" ;;
+    ping) add_by_manager "iputils-ping" "iputils" "iputils" ;;
+    iproute) add_by_manager "iproute2" "iproute" "iproute2" ;;
+    net-tools) add_by_manager "net-tools" "net-tools" "net-tools" ;;
+    traceroute) add_by_manager "traceroute" "traceroute" "traceroute" ;;
+    tcpdump) add_by_manager "tcpdump" "tcpdump" "tcpdump" ;;
+    nmap) add_by_manager "nmap" "nmap" "nmap" ;;
+    socat) add_by_manager "socat" "socat" "socat" ;;
+    telnet) add_by_manager "telnet" "telnet" "busybox-extras" ;;
+    mtr) add_by_manager "mtr" "mtr" "mtr" ;;
+    netcat) add_by_manager "netcat-openbsd" "nc" "busybox-extras" ;;
+    zip) add_by_manager "zip" "zip" "zip" ;;
+    unzip) add_by_manager "unzip" "unzip" "unzip" ;;
+    xz) add_by_manager "xz-utils" "xz" "xz" ;;
+    bzip2) add_by_manager "bzip2" "bzip2" "bzip2" ;;
+    p7zip) add_by_manager "p7zip-full" "p7zip p7zip-plugins" "p7zip" ;;
+    htop) add_by_manager "htop" "htop" "htop" ;;
+    iotop) add_by_manager "iotop" "iotop" "iotop" ;;
+    iftop) add_by_manager "iftop" "iftop" "iftop" ;;
+    sysstat) add_by_manager "sysstat" "sysstat" "sysstat" ;;
+    lsof) add_by_manager "lsof" "lsof" "lsof" ;;
+    strace) add_by_manager "strace" "strace" "strace" ;;
+    psmisc) add_by_manager "psmisc" "psmisc" "psmisc" ;;
+    procps) add_by_manager "procps" "procps-ng" "procps" ;;
+    ncdu) add_by_manager "ncdu" "ncdu" "ncdu" ;;
+    parted) add_by_manager "parted" "parted" "parted" ;;
+    gdisk) add_by_manager "gdisk" "gdisk" "gptfdisk" ;;
+    smartmontools) add_by_manager "smartmontools" "smartmontools" "smartmontools" ;;
+    build-essential) add_by_manager "build-essential" "gcc gcc-c++ make redhat-rpm-config" "build-base" ;;
+    make) add_by_manager "make" "make" "make" ;;
+    gcc) add_by_manager "gcc" "gcc" "gcc" ;;
+    gpp) add_by_manager "g++" "gcc-c++" "g++" ;;
+    pkg-config) add_by_manager "pkg-config" "pkgconfig" "pkgconf" ;;
+    cmake) add_by_manager "cmake" "cmake" "cmake" ;;
+    autoconf) add_by_manager "autoconf" "autoconf" "autoconf" ;;
+    automake) add_by_manager "automake" "automake" "automake" ;;
+    python3) add_by_manager "python3" "python3" "python3" ;;
+    python3-pip) add_by_manager "python3-pip" "python3-pip" "py3-pip" ;;
+    python3-venv) add_by_manager "python3-venv" "python3" "py3-virtualenv" ;;
+    python3-dev) add_by_manager "python3-dev" "python3-devel" "python3-dev" ;;
+    nodejs) add_by_manager "nodejs" "nodejs" "nodejs" ;;
+    npm) add_by_manager "npm" "npm" "npm" ;;
+    fail2ban) add_by_manager "fail2ban" "fail2ban" "fail2ban" ;;
+    ufw) add_by_manager "ufw" "ufw" "ufw" ;;
+    firewalld) add_by_manager "firewalld" "firewalld" "firewalld" ;;
+    openssl) add_by_manager "openssl" "openssl" "openssl" ;;
+    "")
+      ;;
+    *)
+      echo "跳过未知工具: $1"
+      ;;
+  esac
+}
+
+normalize_words() {
+  printf '%s' "$1" | tr ',，;；\\n\\r\\t' '      '
+}
+
+for TOOL in $(normalize_words "$TOOLS"); do
+  if printf '%s' "$TOOL" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._+:-]*$'; then
+    add_tool "$TOOL"
+  else
+    echo "跳过不安全的工具标识: $TOOL"
+  fi
+done
+
+for PKG in $(normalize_words "$EXTRA_PACKAGES"); do
+  if printf '%s' "$PKG" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._+:-]*$'; then
+    add_pkg "$PKG"
+  else
+    echo "跳过不安全的包名: $PKG"
+  fi
+done
+
+PACKAGES="$(printf '%s' "$PACKAGES" | xargs)"
+if [ -z "$PACKAGES" ]; then
+  echo "没有选择任何工具，也没有填写额外包名。"
+  exit 1
+fi
+
+echo "包管理器: $PKG_MANAGER"
+echo "准备安装: $PACKAGES"
+echo
+
+case "$PKG_MANAGER" in
+  apt)
+    apt-get update
+    ;;
+  dnf)
+    dnf makecache
+    ;;
+  yum)
+    yum makecache
+    ;;
+  apk)
+    apk update
+    ;;
+esac
+
+install_one() {
+  PKG="$1"
+  echo
+  echo "==> 安装 $PKG"
+  case "$PKG_MANAGER" in
+    apt)
+      DEBIAN_FRONTEND=noninteractive apt-get install -y "$PKG"
+      ;;
+    dnf)
+      dnf install -y "$PKG"
+      ;;
+    yum)
+      yum install -y "$PKG"
+      ;;
+    apk)
+      apk add --no-cache "$PKG"
+      ;;
+  esac
+}
+
+for PKG in $PACKAGES; do
+  if install_one "$PKG"; then
+    INSTALLED_COUNT=$((INSTALLED_COUNT + 1))
+  else
+    FAILED_PACKAGES="$FAILED_PACKAGES $PKG"
+    echo "安装失败，继续处理下一个包: $PKG"
+  fi
+done
+
+echo
+echo "安装完成，成功处理 $INSTALLED_COUNT 个包。"
+if [ -n "$(printf '%s' "$FAILED_PACKAGES" | xargs)" ]; then
+  echo "以下包未安装成功:$(printf '%s' "$FAILED_PACKAGES" | xargs | sed 's/^/ /')"
+  echo "可能原因：当前系统源未提供该包、源未启用扩展仓库，或包名在该发行版下不同。"
+  [ "$INSTALLED_COUNT" -gt 0 ] && exit 0
+  exit 1
+fi`
+
+const AUTO_CHANGE_MIRROR_SCRIPT_CONTENT = `set -e
+REGION_MODE="{{region_mode}}"
+MIRROR_SOURCE="{{mirror_source}}"
+CUSTOM_SOURCE="{{custom_source}}"
+UPGRADE_SOFTWARE="{{upgrade_software}}"
+PRINT_DIFF="{{print_diff}}"
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "请使用 root 权限执行该脚本。"
+  exit 1
+fi
+
+case "$REGION_MODE" in
+  auto|cn|abroad|edu) ;;
+  *)
+    echo "地区模式只能是 auto、cn、abroad 或 edu。"
+    exit 1
+    ;;
+esac
+
+case "$MIRROR_SOURCE" in
+  auto|aliyun|ustc|tencent|huawei|tsinghua|official|custom) ;;
+  *)
+    echo "镜像站策略不支持: $MIRROR_SOURCE"
+    exit 1
+    ;;
+esac
+
+case "$UPGRADE_SOFTWARE" in
+  true|false) ;;
+  *)
+    echo "是否升级软件包只能是 true 或 false。"
+    exit 1
+    ;;
+esac
+
+case "$PRINT_DIFF" in
+  true|false) ;;
+  *)
+    echo "是否打印差异只能是 true 或 false。"
+    exit 1
+    ;;
+esac
+
+fetch_url() {
+  URL="$1"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --connect-timeout 5 --max-time 8 "$URL"
+    return $?
+  fi
+  if command -v wget >/dev/null 2>&1; then
+    wget -qO- --timeout=8 "$URL"
+    return $?
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$URL" <<'PY'
+import sys
+import urllib.request
+
+try:
+    with urllib.request.urlopen(sys.argv[1], timeout=8) as response:
+        sys.stdout.write(response.read().decode("utf-8", "ignore"))
+except Exception:
+    sys.exit(1)
+PY
+    return $?
+  fi
+  return 1
+}
+
+detect_country() {
+  for URL in \
+    "https://ipapi.co/country/" \
+    "https://ifconfig.co/country-iso" \
+    "https://ipinfo.io/country"
+  do
+    COUNTRY="$(fetch_url "$URL" 2>/dev/null | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]' | cut -c 1-2 || true)"
+    if printf '%s' "$COUNTRY" | grep -Eq '^[A-Z][A-Z]$'; then
+      printf '%s\\n' "$COUNTRY"
+      return 0
+    fi
+  done
+  printf 'UNKNOWN\\n'
+}
+
+detect_system() {
+  OS_NAME="Unknown Linux"
+  OS_ID="unknown"
+  OS_VERSION=""
+
+  if [ -r /etc/os-release ]; then
+    . /etc/os-release
+    OS_NAME="$PRETTY_NAME"
+    [ -n "$OS_NAME" ] || OS_NAME="$NAME"
+    OS_ID="$ID"
+    [ -n "$OS_ID" ] || OS_ID="unknown"
+    OS_VERSION="$VERSION_ID"
+  fi
+
+  echo "系统: $OS_NAME"
+  echo "发行版 ID: $OS_ID"
+  [ -n "$OS_VERSION" ] && echo "版本: $OS_VERSION"
+  echo "架构: $(uname -m 2>/dev/null || echo unknown)"
+}
+
+normalize_mirror_host() {
+  HOST="$1"
+  HOST="$(printf '%s' "$HOST" | sed -E 's#^https?://##; s#/*$##')"
+  printf '%s\\n' "$HOST"
+}
+
+mirror_url() {
+  PATH_PART="$1"
+  if [ "$RESOLVED_SOURCE" = "official" ]; then
+    printf '%s\\n' "$PATH_PART"
+    return 0
+  fi
+  printf 'https://%s/%s\\n' "$RESOLVED_SOURCE" "$PATH_PART"
+}
+
+backup_file() {
+  FILE="$1"
+  if [ ! -e "$FILE" ]; then
+    return 0
+  fi
+
+  BACKUP="$FILE.mshell.bak.$(date +%Y%m%d%H%M%S)"
+  cp -a "$FILE" "$BACKUP"
+  echo "已备份: $BACKUP"
+}
+
+disable_os_apt_source_files() {
+  BACKUP_DIR="/etc/apt/sources.list.d/mshell-disabled-$(date +%Y%m%d%H%M%S)"
+  CREATED=0
+
+  for FILE in /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+    [ -f "$FILE" ] || continue
+    if grep -Eiq 'archive\\.ubuntu\\.com|security\\.ubuntu\\.com|ports\\.ubuntu\\.com|deb\\.debian\\.org|security\\.debian\\.org|mirrors\\..*/(ubuntu|debian)|repo\\.huaweicloud\\.com/(ubuntu|debian)|mirrors\\.cloud\\.tencent\\.com/(ubuntu|debian)' "$FILE"; then
+      if [ "$CREATED" -eq 0 ]; then
+        mkdir -p "$BACKUP_DIR"
+        CREATED=1
+      fi
+      mv "$FILE" "$BACKUP_DIR/"
+      echo "已禁用旧系统源文件: $FILE"
+    fi
+  done
+}
+
+detect_apt_codename() {
+  CODENAME="$VERSION_CODENAME"
+  if [ -n "$UBUNTU_CODENAME" ]; then
+    CODENAME="$UBUNTU_CODENAME"
+  fi
+  if [ -z "$CODENAME" ] && command -v lsb_release >/dev/null 2>&1; then
+    CODENAME="$(lsb_release -cs 2>/dev/null || true)"
+  fi
+  if [ -z "$CODENAME" ]; then
+    case "$OS_ID:$OS_VERSION" in
+      ubuntu:24.04) CODENAME="noble" ;;
+      ubuntu:22.04) CODENAME="jammy" ;;
+      ubuntu:20.04) CODENAME="focal" ;;
+      ubuntu:18.04) CODENAME="bionic" ;;
+      debian:13) CODENAME="trixie" ;;
+      debian:12) CODENAME="bookworm" ;;
+      debian:11) CODENAME="bullseye" ;;
+      debian:10) CODENAME="buster" ;;
+    esac
+  fi
+  printf '%s\\n' "$CODENAME"
+}
+
+configure_apt_sources() {
+  CODENAME="$(detect_apt_codename)"
+  if [ -z "$CODENAME" ]; then
+    echo "无法识别 Debian/Ubuntu 版本代号，未修改 apt 源。"
+    exit 1
+  fi
+
+  case "$OS_ID" in
+    ubuntu|linuxmint|pop)
+      ARCH="$(dpkg --print-architecture 2>/dev/null || uname -m)"
+      if [ "$RESOLVED_SOURCE" = "official" ]; then
+        if [ "$ARCH" = "amd64" ] || [ "$ARCH" = "i386" ]; then
+          BASE="http://archive.ubuntu.com/ubuntu"
+          SECURITY="http://security.ubuntu.com/ubuntu"
+        else
+          BASE="http://ports.ubuntu.com/ubuntu-ports"
+          SECURITY="$BASE"
+        fi
+      else
+        BASE="$(mirror_url ubuntu)"
+        SECURITY="$BASE"
+      fi
+      COMPONENTS="main restricted universe multiverse"
+      NEW_CONTENT="deb $BASE $CODENAME $COMPONENTS
+deb $BASE $CODENAME-updates $COMPONENTS
+deb $BASE $CODENAME-backports $COMPONENTS
+deb $SECURITY $CODENAME-security $COMPONENTS"
+      ;;
+    debian)
+      if [ "$RESOLVED_SOURCE" = "official" ]; then
+        BASE="http://deb.debian.org/debian"
+        SECURITY="http://security.debian.org/debian-security"
+      else
+        BASE="$(mirror_url debian)"
+        SECURITY="$(mirror_url debian-security)"
+      fi
+      COMPONENTS="main contrib non-free"
+      case "$CODENAME" in
+        bookworm|trixie|forky|sid) COMPONENTS="$COMPONENTS non-free-firmware" ;;
+      esac
+      NEW_CONTENT="deb $BASE $CODENAME $COMPONENTS
+deb $BASE $CODENAME-updates $COMPONENTS
+deb $BASE $CODENAME-backports $COMPONENTS
+deb $SECURITY $CODENAME-security $COMPONENTS"
+      ;;
+    *)
+      echo "检测到 apt，但当前发行版 $OS_ID 暂未内置换源规则。"
+      exit 1
+      ;;
+  esac
+
+  TARGET="/etc/apt/sources.list"
+  backup_file "$TARGET"
+  disable_os_apt_source_files
+  printf '%s\\n' "$NEW_CONTENT" > "$TARGET"
+  echo "已写入 apt 源: $TARGET"
+
+  if [ "$PRINT_DIFF" = "true" ] && command -v diff >/dev/null 2>&1; then
+    LAST_BACKUP="$(ls -t /etc/apt/sources.list.mshell.bak.* 2>/dev/null | head -n 1 || true)"
+    [ -n "$LAST_BACKUP" ] && diff -u "$LAST_BACKUP" "$TARGET" || true
+  fi
+
+  apt-get update
+  if [ "$UPGRADE_SOFTWARE" = "true" ]; then
+    apt-get upgrade -y
+  fi
+}
+
+write_yum_repo() {
+  TARGET="/etc/yum.repos.d/mshell-mirror.repo"
+  mkdir -p /etc/yum.repos.d
+  backup_file "$TARGET"
+  printf '%s\\n' "$1" > "$TARGET"
+  echo "已写入 yum/dnf 源: $TARGET"
+
+  if [ "$PRINT_DIFF" = "true" ] && command -v diff >/dev/null 2>&1; then
+    LAST_BACKUP="$(ls -t /etc/yum.repos.d/mshell-mirror.repo.mshell.bak.* 2>/dev/null | head -n 1 || true)"
+    [ -n "$LAST_BACKUP" ] && diff -u "$LAST_BACKUP" "$TARGET" || true
+  fi
+}
+
+configure_yum_sources() {
+  if [ "$RESOLVED_SOURCE" = "official" ]; then
+    echo "RHEL 系发行版不建议自动切换到 official，保持系统原有官方源。"
+    if command -v dnf >/dev/null 2>&1; then
+      dnf makecache
+    else
+      yum makecache
+    fi
+    return 0
+  fi
+
+  YUM_RELEASE='$releasever'
+  YUM_BASEARCH='$basearch'
+
+  case "$OS_ID" in
+    rocky)
+      BASE="$(mirror_url rockylinux)"
+      REPO_CONTENT="[baseos]
+name=Rocky Linux $YUM_RELEASE - BaseOS
+baseurl=$BASE/$YUM_RELEASE/BaseOS/$YUM_BASEARCH/os/
+enabled=1
+gpgcheck=0
+
+[appstream]
+name=Rocky Linux $YUM_RELEASE - AppStream
+baseurl=$BASE/$YUM_RELEASE/AppStream/$YUM_BASEARCH/os/
+enabled=1
+gpgcheck=0
+
+[extras]
+name=Rocky Linux $YUM_RELEASE - Extras
+baseurl=$BASE/$YUM_RELEASE/extras/$YUM_BASEARCH/os/
+enabled=1
+gpgcheck=0"
+      ;;
+    almalinux)
+      BASE="$(mirror_url almalinux)"
+      REPO_CONTENT="[baseos]
+name=AlmaLinux $YUM_RELEASE - BaseOS
+baseurl=$BASE/$YUM_RELEASE/BaseOS/$YUM_BASEARCH/os/
+enabled=1
+gpgcheck=0
+
+[appstream]
+name=AlmaLinux $YUM_RELEASE - AppStream
+baseurl=$BASE/$YUM_RELEASE/AppStream/$YUM_BASEARCH/os/
+enabled=1
+gpgcheck=0
+
+[extras]
+name=AlmaLinux $YUM_RELEASE - Extras
+baseurl=$BASE/$YUM_RELEASE/extras/$YUM_BASEARCH/os/
+enabled=1
+gpgcheck=0"
+      ;;
+    centos)
+      BASE="$(mirror_url centos-stream)"
+      REPO_CONTENT="[baseos]
+name=CentOS Stream $YUM_RELEASE - BaseOS
+baseurl=$BASE/$YUM_RELEASE-stream/BaseOS/$YUM_BASEARCH/os/
+enabled=1
+gpgcheck=0
+
+[appstream]
+name=CentOS Stream $YUM_RELEASE - AppStream
+baseurl=$BASE/$YUM_RELEASE-stream/AppStream/$YUM_BASEARCH/os/
+enabled=1
+gpgcheck=0"
+      ;;
+    fedora)
+      BASE="$(mirror_url fedora)"
+      REPO_CONTENT="[fedora]
+name=Fedora $YUM_RELEASE - Everything
+baseurl=$BASE/releases/$YUM_RELEASE/Everything/$YUM_BASEARCH/os/
+enabled=1
+gpgcheck=0
+
+[updates]
+name=Fedora $YUM_RELEASE - Updates
+baseurl=$BASE/updates/$YUM_RELEASE/Everything/$YUM_BASEARCH/
+enabled=1
+gpgcheck=0"
+      ;;
+    *)
+      echo "检测到 dnf/yum，但当前发行版 $OS_ID 暂未内置换源规则。"
+      exit 1
+      ;;
+  esac
+
+  write_yum_repo "$REPO_CONTENT"
+  if command -v dnf >/dev/null 2>&1; then
+    dnf clean all
+    dnf makecache
+    [ "$UPGRADE_SOFTWARE" = "true" ] && dnf upgrade -y
+  else
+    yum clean all
+    yum makecache
+    [ "$UPGRADE_SOFTWARE" = "true" ] && yum upgrade -y
+  fi
+}
+
+configure_apk_sources() {
+  if [ -r /etc/alpine-release ]; then
+    ALPINE_VERSION="$(cut -d. -f1,2 /etc/alpine-release)"
+  else
+    ALPINE_VERSION="$OS_VERSION"
+  fi
+  if [ -z "$ALPINE_VERSION" ]; then
+    echo "无法识别 Alpine 版本，未修改 apk 源。"
+    exit 1
+  fi
+
+  if [ "$RESOLVED_SOURCE" = "official" ]; then
+    BASE="https://dl-cdn.alpinelinux.org/alpine"
+  else
+    BASE="$(mirror_url alpine)"
+  fi
+
+  TARGET="/etc/apk/repositories"
+  backup_file "$TARGET"
+  printf '%s\\n%s\\n' "$BASE/v$ALPINE_VERSION/main" "$BASE/v$ALPINE_VERSION/community" > "$TARGET"
+  echo "已写入 apk 源: $TARGET"
+
+  if [ "$PRINT_DIFF" = "true" ] && command -v diff >/dev/null 2>&1; then
+    LAST_BACKUP="$(ls -t /etc/apk/repositories.mshell.bak.* 2>/dev/null | head -n 1 || true)"
+    [ -n "$LAST_BACKUP" ] && diff -u "$LAST_BACKUP" "$TARGET" || true
+  fi
+
+  apk update
+  [ "$UPGRADE_SOFTWARE" = "true" ] && apk upgrade
+}
+
+resolve_region() {
+  COUNTRY="$1"
+  if [ "$REGION_MODE" = "auto" ]; then
+    if [ "$COUNTRY" = "CN" ]; then
+      printf 'cn\\n'
+    else
+      printf 'abroad\\n'
+    fi
+    return 0
+  fi
+  printf '%s\\n' "$REGION_MODE"
+}
+
+resolve_source() {
+  REGION="$1"
+  SOURCE_KIND="$MIRROR_SOURCE"
+
+  if [ "$SOURCE_KIND" = "auto" ]; then
+    case "$REGION" in
+      cn) SOURCE_KIND="aliyun" ;;
+      edu) SOURCE_KIND="ustc" ;;
+      *) SOURCE_KIND="official" ;;
+    esac
+  fi
+
+  case "$SOURCE_KIND" in
+    aliyun) printf 'mirrors.aliyun.com\\n' ;;
+    ustc) printf 'mirrors.ustc.edu.cn\\n' ;;
+    tencent) printf 'mirrors.cloud.tencent.com\\n' ;;
+    huawei) printf 'repo.huaweicloud.com\\n' ;;
+    tsinghua) printf 'mirrors.tuna.tsinghua.edu.cn\\n' ;;
+    official) printf 'official\\n' ;;
+    custom)
+      if [ -z "$CUSTOM_SOURCE" ]; then
+        echo "选择 custom 时必须填写自定义镜像站域名，例如 mirrors.example.com。" >&2
+        exit 1
+      fi
+      printf '%s\\n' "$CUSTOM_SOURCE"
+      ;;
+  esac
+}
+
+if [ "$REGION_MODE" = "auto" ]; then
+  COUNTRY_CODE="$(detect_country)"
+else
+  COUNTRY_CODE="MANUAL"
+fi
+RESOLVED_REGION="$(resolve_region "$COUNTRY_CODE")"
+RESOLVED_SOURCE_RAW="$(resolve_source "$RESOLVED_REGION")"
+RESOLVED_SOURCE="$(normalize_mirror_host "$RESOLVED_SOURCE_RAW")"
+
+echo "== MShell 自动换源 =="
+detect_system
+echo "公网地区: $COUNTRY_CODE"
+echo "换源区域: $RESOLVED_REGION"
+echo "目标源: $RESOLVED_SOURCE"
+echo
+
+if [ -r /etc/os-release ]; then
+  . /etc/os-release
+  OS_ID="$ID"
+  OS_ID_LIKE="$ID_LIKE"
+  OS_VERSION="$VERSION_ID"
+  OS_NAME="$PRETTY_NAME"
+fi
+
+if command -v apt-get >/dev/null 2>&1; then
+  configure_apt_sources
+elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
+  configure_yum_sources
+elif command -v apk >/dev/null 2>&1; then
+  configure_apk_sources
+else
+  echo "未检测到已支持的包管理器。当前脚本支持 apt、dnf、yum、apk。"
+  exit 1
+fi
+
+echo
+echo "换源流程完成。"`
+
 const DEFAULT_LAZY_SCRIPTS: Array<Omit<LazyScript, 'id' | 'usageCount' | 'createdAt' | 'updatedAt'>> = [
   {
     name: '查看系统基础信息',
@@ -1697,36 +2524,25 @@ echo "用户 $NEW_USER 已创建并授予 sudo 权限。"`,
   {
     name: '安装常用工具',
     fileName: 'install-basic-tools.sh',
-    description: '按系统包管理器安装 curl、wget、vim、git、htop、unzip。',
+    description: INSTALL_BASIC_TOOLS_SCRIPT_DESCRIPTION,
     category: '环境初始化',
-    tags: ['install', 'tools'],
+    tags: ['install', 'tools', 'sudo'],
     type: 'shell',
-    content: `set -e
-PACKAGES="{{packages}}"
-
-if command -v apt-get >/dev/null 2>&1; then
-  apt-get update
-  apt-get install -y $PACKAGES
-elif command -v dnf >/dev/null 2>&1; then
-  dnf install -y $PACKAGES
-elif command -v yum >/dev/null 2>&1; then
-  yum install -y $PACKAGES
-elif command -v apk >/dev/null 2>&1; then
-  apk add --no-cache $PACKAGES
-else
-  echo "未检测到已支持的包管理器。"
-  exit 1
-fi`,
-    variables: [
-      {
-        name: 'packages',
-        label: '软件包',
-        type: 'text',
-        defaultValue: 'curl wget vim git htop unzip',
-        required: true
-      }
-    ],
+    content: INSTALL_BASIC_TOOLS_SCRIPT_CONTENT,
+    variables: INSTALL_BASIC_TOOLS_SCRIPT_VARIABLES,
     riskLevel: 'medium',
+    runMode: 'paste'
+  },
+  {
+    name: '自动更换系统软件源',
+    fileName: 'auto-change-mirror.sh',
+    description: AUTO_CHANGE_MIRROR_SCRIPT_DESCRIPTION,
+    category: '环境初始化',
+    tags: ['mirror', 'repo', 'source'],
+    type: 'shell',
+    content: AUTO_CHANGE_MIRROR_SCRIPT_CONTENT,
+    variables: AUTO_CHANGE_MIRROR_SCRIPT_VARIABLES,
+    riskLevel: 'high',
     runMode: 'paste'
   },
   {
@@ -1952,12 +2768,13 @@ export class LazyScriptManager extends BaseManager<LazyScript> {
     return Array.from(variables)
   }
 
-  render(content: string, values: Record<string, string>): string {
+  render(content: string, values: Record<string, string | string[]>): string {
     let result = content
     for (const [key, value] of Object.entries(values || {})) {
       if (!VARIABLE_NAME_PATTERN.test(key)) continue
-      result = result.replace(new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g'), value)
-      result = result.replace(new RegExp(`\\$\\{${key}\\}`, 'g'), value)
+      const normalizedValue = Array.isArray(value) ? value.join(' ') : String(value || '')
+      result = result.replace(new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g'), normalizedValue)
+      result = result.replace(new RegExp(`\\$\\{${key}\\}`, 'g'), normalizedValue)
     }
     return result
   }
@@ -2034,6 +2851,22 @@ export class LazyScriptManager extends BaseManager<LazyScript> {
       })
     }
 
+    const installBasicToolsScript = this.getAll().find(
+      (script) => script.fileName === 'install-basic-tools.sh' || script.name === '安装常用工具'
+    )
+
+    if (
+      installBasicToolsScript &&
+      this.shouldMigrateInstallBasicToolsScript(installBasicToolsScript)
+    ) {
+      await this.update(installBasicToolsScript.id, {
+        description: INSTALL_BASIC_TOOLS_SCRIPT_DESCRIPTION,
+        tags: ['install', 'tools', 'sudo'],
+        content: INSTALL_BASIC_TOOLS_SCRIPT_CONTENT,
+        variables: INSTALL_BASIC_TOOLS_SCRIPT_VARIABLES
+      })
+    }
+
     const enableSshPasswordScript = this.getAll().find(
       (script) =>
         script.fileName === 'enable-ssh-password-login.sh' || script.name === '开启 SSH 密码登录'
@@ -2047,6 +2880,23 @@ export class LazyScriptManager extends BaseManager<LazyScript> {
         description: ENABLE_SSH_PASSWORD_SCRIPT_DESCRIPTION,
         content: ENABLE_SSH_PASSWORD_SCRIPT_CONTENT,
         variables: [SSH_PORT_VARIABLE]
+      })
+    }
+
+    const autoChangeMirrorScript = this.getAll().find(
+      (script) =>
+        script.fileName === 'auto-change-mirror.sh' || script.name === '自动更换系统软件源'
+    )
+
+    if (
+      autoChangeMirrorScript &&
+      this.shouldMigrateAutoChangeMirrorScript(autoChangeMirrorScript.content)
+    ) {
+      await this.update(autoChangeMirrorScript.id, {
+        description: AUTO_CHANGE_MIRROR_SCRIPT_DESCRIPTION,
+        tags: ['mirror', 'repo', 'source'],
+        content: AUTO_CHANGE_MIRROR_SCRIPT_CONTENT,
+        variables: AUTO_CHANGE_MIRROR_SCRIPT_VARIABLES
       })
     }
   }
@@ -2120,6 +2970,108 @@ export class LazyScriptManager extends BaseManager<LazyScript> {
     )
   }
 
+  private shouldMigrateInstallBasicToolsScript(script: LazyScript): boolean {
+    if (this.isSameScriptContent(script.content, OLD_INSTALL_BASIC_TOOLS_SCRIPT_CONTENT)) {
+      return true
+    }
+
+    const normalized = script.content.replace(/\r\n/g, '\n')
+    const toolsVariable = script.variables.find((variable) => variable.name === 'tools')
+    const hasOldPackagesTemplate =
+      normalized.includes('PACKAGES="{{packages}}"') &&
+      normalized.includes('apt-get install -y $PACKAGES') &&
+      normalized.includes('apk add --no-cache $PACKAGES')
+    const hasToolGroupsTemplate =
+      normalized.includes('TOOL_GROUPS="{{tool_groups}}"') &&
+      normalized.includes('EXTRA_PACKAGES="{{extra_packages}}"') &&
+      normalized.includes('add_group()')
+    const hasToolsTemplate =
+      normalized.includes('TOOLS="{{tools}}"') &&
+      normalized.includes('EXTRA_PACKAGES="{{extra_packages}}"') &&
+      normalized.includes('add_tool()')
+    const hasBrokenToolsVariable =
+      hasToolsTemplate &&
+      (toolsVariable?.type !== 'multiselect' ||
+        !script.variables.some((variable) => variable.name === 'extra_packages') ||
+        (toolsVariable.options?.length || 0) < 30)
+    const hasPreviousDefaultTools =
+      hasToolsTemplate && toolsVariable?.defaultValue === PREVIOUS_INSTALL_BASIC_TOOLS_DEFAULT_TOOLS
+
+    return (
+      hasOldPackagesTemplate ||
+      hasToolGroupsTemplate ||
+      hasBrokenToolsVariable ||
+      hasPreviousDefaultTools
+    )
+  }
+
+  private shouldMigrateAutoChangeMirrorScript(content: string): boolean {
+    const normalized = content.replace(/\r\n/g, '\n')
+    // These hidden markers are only used to replace the earlier remote-executing template.
+    const legacyRemoteUrl = String.fromCharCode(
+      104,
+      116,
+      116,
+      112,
+      115,
+      58,
+      47,
+      47,
+      108,
+      105,
+      110,
+      117,
+      120,
+      109,
+      105,
+      114,
+      114,
+      111,
+      114,
+      115,
+      46,
+      99,
+      110,
+      47,
+      109,
+      97,
+      105,
+      110,
+      46,
+      115,
+      104
+    )
+    const legacyRemoteFetchMessage = `${String.fromCharCode(
+      27491,
+      22312,
+      33719,
+      21462,
+      32,
+      76,
+      105,
+      110,
+      117,
+      120,
+      77,
+      105,
+      114,
+      114,
+      111,
+      114,
+      115,
+      32,
+      20027,
+      33050,
+      26412
+    )}`
+
+    return (
+      normalized.includes(legacyRemoteUrl) ||
+      normalized.includes(legacyRemoteFetchMessage) ||
+      normalized.includes('bash "$TMP_SCRIPT" $ARGS')
+    )
+  }
+
   private isSameScriptContent(left: string, right: string): boolean {
     return left.replace(/\r\n/g, '\n').trim() === right.replace(/\r\n/g, '\n').trim()
   }
@@ -2190,6 +3142,7 @@ export class LazyScriptManager extends BaseManager<LazyScript> {
     return type === 'number' ||
       type === 'password' ||
       type === 'textarea' ||
+      type === 'multiselect' ||
       type === 'select' ||
       type === 'text'
       ? type

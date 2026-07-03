@@ -179,14 +179,11 @@ function checkRisk(command: string): boolean {
 // 生成命令建议
 async function generateSuggestion() {
   if (!props.query || !props.visible) {
-    console.log('[AICommandSuggest] generateSuggestion skipped - query:', props.query, 'visible:', props.visible)
     return
   }
   
   // 增加请求 ID，取消之前的请求
   const requestId = ++currentRequestId
-  
-  console.log('[AICommandSuggest] generateSuggestion started for query:', props.query, 'requestId:', requestId)
   
   loading.value = true
   suggestion.value = ''
@@ -196,7 +193,6 @@ async function generateSuggestion() {
   try {
     // 检查 AI API 是否可用
     if (!window.electronAPI?.ai?.request) {
-      console.log('[AICommandSuggest] AI API not available')
       errorMessage.value = 'AI 功能未配置'
       return
     }
@@ -211,17 +207,13 @@ async function generateSuggestion() {
 
 命令：`
 
-    console.log('[AICommandSuggest] Sending AI request...')
     const result = await window.electronAPI.ai.request('write', prompt)
-    
+
     // 检查请求是否过期
     if (requestId !== currentRequestId) {
-      console.log('[AICommandSuggest] Request expired, ignoring response')
       return
     }
-    
-    console.log('[AICommandSuggest] AI response:', result)
-    
+
     if (result?.success && result.data) {
       // 清理返回的命令
       let command = result.data.trim()
@@ -256,7 +248,6 @@ async function generateSuggestion() {
       if (command) {
         suggestion.value = command
         isRisky.value = checkRisk(command)
-        console.log('[AICommandSuggest] Generated suggestion:', command)
       } else {
         errorMessage.value = '无法解析命令'
       }
@@ -273,8 +264,7 @@ async function generateSuggestion() {
 }
 
 // 只监听 query 变化来触发 AI 请求
-watch(() => props.query, (newQuery, oldQuery) => {
-  console.log('[AICommandSuggest] Query changed:', oldQuery, '->', newQuery, 'visible:', props.visible)
+watch(() => props.query, (newQuery) => {
   if (props.visible && newQuery) {
     // 只要 query 有值且 visible，就生成建议
     // 即使 query 和之前相同，也重新生成（用户可能想重试）
@@ -284,7 +274,6 @@ watch(() => props.query, (newQuery, oldQuery) => {
 
 // 监听 visible 变化
 watch(() => props.visible, (newVal) => {
-  console.log('[AICommandSuggest] Visible changed:', newVal, 'query:', props.query)
   if (!newVal) {
     // 关闭时重置状态
     suggestion.value = ''

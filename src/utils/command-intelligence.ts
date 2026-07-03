@@ -14,16 +14,12 @@ export interface CommandExplanation {
 
 /**
  * 检测是否是命令解释查询
- * 支持格式：?command 或 command?
+ * 支持格式：?command
  */
 export function isExplainQuery(input: string): boolean {
   const trimmed = input.trim()
   // ?command 格式
   if (trimmed.startsWith('?') && trimmed.length > 1) {
-    return true
-  }
-  // command? 格式
-  if (trimmed.endsWith('?') && trimmed.length > 1) {
     return true
   }
   return false
@@ -34,17 +30,12 @@ export function isExplainQuery(input: string): boolean {
  */
 export function parseExplainQuery(input: string): string | null {
   const trimmed = input.trim()
-  
+
   // ?command 格式
   if (trimmed.startsWith('?')) {
     return trimmed.slice(1).trim() || null
   }
-  
-  // command? 格式
-  if (trimmed.endsWith('?')) {
-    return trimmed.slice(0, -1).trim() || null
-  }
-  
+
   return null
 }
 

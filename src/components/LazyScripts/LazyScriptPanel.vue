@@ -189,10 +189,11 @@
             <small>部署前替换到脚本文件内容</small>
           </div>
           <div class="variable-grid">
-            <label
+            <div
               v-for="variable in selectedScript.variables"
               :key="variable.name"
               class="variable-field"
+              :class="{ 'variable-field-wide': variable.type === 'multiselect' }"
             >
               <span>
                 {{ variable.label || variable.name }}
@@ -203,13 +204,65 @@
                 v-model="executionValues[variable.name]"
                 placeholder="请选择"
               >
-                <el-option
-                  v-for="option in variable.options || []"
-                  :key="option"
-                  :label="option"
-                  :value="option"
-                />
+                <template v-if="hasGroupedVariableOptions(variable)">
+                  <el-option-group
+                    v-for="group in groupedVariableOptions(variable)"
+                    :key="group.label"
+                    :label="group.label"
+                  >
+                    <el-option
+                      v-for="option in group.options"
+                      :key="option.raw"
+                      :label="option.label"
+                      :value="option.value"
+                    />
+                  </el-option-group>
+                </template>
+                <template v-else>
+                  <el-option
+                    v-for="option in parsedVariableOptions(variable)"
+                    :key="option.raw"
+                    :label="option.label"
+                    :value="option.value"
+                  />
+                </template>
               </el-select>
+              <div v-else-if="variable.type === 'multiselect'" class="variable-check-panel">
+                <el-checkbox-group
+                  :model-value="getMultiSelectValue(variable.name)"
+                  @update:model-value="setMultiSelectValue(variable.name, $event)"
+                >
+                  <div v-if="hasGroupedVariableOptions(variable)" class="variable-check-groups">
+                    <section
+                      v-for="group in groupedVariableOptions(variable)"
+                      :key="group.label"
+                      class="variable-check-group"
+                    >
+                      <div class="variable-check-group-title">{{ group.label }}</div>
+                      <div class="variable-check-list">
+                        <el-checkbox
+                          v-for="option in group.options"
+                          :key="option.raw"
+                          :value="option.value"
+                          border
+                        >
+                          {{ option.label }}
+                        </el-checkbox>
+                      </div>
+                    </section>
+                  </div>
+                  <div v-else class="variable-check-list">
+                    <el-checkbox
+                      v-for="option in parsedVariableOptions(variable)"
+                      :key="option.raw"
+                      :value="option.value"
+                      border
+                    >
+                      {{ option.label }}
+                    </el-checkbox>
+                  </div>
+                </el-checkbox-group>
+              </div>
               <el-input-number
                 v-else-if="variable.type === 'number'"
                 v-model="numberExecutionValues[variable.name]"
@@ -223,7 +276,7 @@
                 :rows="variable.type === 'textarea' ? 4 : undefined"
                 :show-password="variable.type === 'password'"
               />
-            </label>
+            </div>
           </div>
         </section>
 
@@ -367,10 +420,11 @@
               <el-option label="密码" value="password" />
               <el-option label="多行文本" value="textarea" />
               <el-option label="选项" value="select" />
+              <el-option label="多选" value="multiselect" />
             </el-select>
             <el-input v-model="variable.defaultValue" placeholder="默认值" />
             <el-input
-              v-if="variable.type === 'select'"
+              v-if="variable.type === 'select' || variable.type === 'multiselect'"
               v-model="variable.optionsText"
               placeholder="选项，逗号分隔"
             />
@@ -539,7 +593,8 @@ echo "将 SSH 端口修改为 $NEW_PORT"</code></pre>
           <ul>
             <li><strong>变量名</strong>：必须和脚本里的占位符一致，例如 <code>ssh_port</code>。</li>
             <li><strong>显示名称</strong>：展示给用户看的输入项名称，例如 <code>SSH 端口</code>。</li>
-            <li><strong>类型</strong>：支持文本、数字、密码、多行文本和选项。</li>
+            <li><strong>类型</strong>：支持文本、数字、密码、多行文本、选项和多选。</li>
+            <li><strong>选项</strong>：选项/多选可用逗号分隔；需要分类显示时写成 <code>value|分类|显示名称</code>，分类只作为标题，不能被勾选。</li>
             <li><strong>默认值</strong>：打开脚本时自动填入，可按需修改。</li>
             <li><strong>必填</strong>：运行前会检查，避免空变量直接写进脚本。</li>
           </ul>
@@ -672,8 +727,9 @@ import { terminalManager } from '@/utils/terminal-manager'
 type LazyScriptType = 'command' | 'shell' | 'steps'
 type LazyScriptRunMode = 'copy' | 'paste' | 'execute'
 type LazyScriptRiskLevel = 'low' | 'medium' | 'high'
-type LazyScriptVariableType = 'text' | 'number' | 'password' | 'textarea' | 'select'
+type LazyScriptVariableType = 'text' | 'number' | 'password' | 'textarea' | 'select' | 'multiselect'
 type SSHKeyType = 'rsa' | 'ed25519' | 'ecdsa'
+type ExecutionValue = string | string[]
 
 interface LazyScriptVariable {
   name: string
@@ -703,6 +759,13 @@ interface LazyScript {
 
 interface EditableVariable extends LazyScriptVariable {
   optionsText?: string
+}
+
+interface VariableOptionItem {
+  raw: string
+  value: string
+  label: string
+  group: string
 }
 
 interface SSHKey {
@@ -736,7 +799,7 @@ const showGenerateKeyDialog = ref(false)
 const showManualKeyDialog = ref(false)
 const generatingKey = ref(false)
 const addingKey = ref(false)
-const executionValues = reactive<Record<string, string>>({})
+const executionValues = reactive<Record<string, ExecutionValue>>({})
 const numberExecutionValues = reactive<Record<string, number | undefined>>({})
 
 const scriptForm = reactive({
@@ -855,8 +918,9 @@ const renderedContent = computed(() => {
   let result = selectedScript.value.content
   Object.entries(executionValues).forEach(([name, value]) => {
     const escaped = escapeRegExp(name)
-    result = result.replace(new RegExp(`\\{\\{\\s*${escaped}\\s*\\}\\}`, 'g'), value || '')
-    result = result.replace(new RegExp(`\\$\\{${escaped}\\}`, 'g'), value || '')
+    const normalizedValue = stringifyExecutionValue(value)
+    result = result.replace(new RegExp(`\\{\\{\\s*${escaped}\\s*\\}\\}`, 'g'), normalizedValue)
+    result = result.replace(new RegExp(`\\$\\{${escaped}\\}`, 'g'), normalizedValue)
   })
   return result
 })
@@ -927,7 +991,8 @@ const resetExecutionValues = (script: LazyScript | null) => {
 
   script?.variables.forEach((variable) => {
     const value = variable.defaultValue || ''
-    executionValues[variable.name] = value
+    executionValues[variable.name] =
+      variable.type === 'multiselect' ? parseMultiSelectDefault(value) : value
     if (variable.type === 'number') {
       const numberValue = Number(value)
       numberExecutionValues[variable.name] = Number.isFinite(numberValue) ? numberValue : undefined
@@ -999,7 +1064,7 @@ const openManualKeyDialog = () => {
   const safeHost = host.replace(/[^a-zA-Z0-9._-]/g, '-')
   manualKeyForm.name = `manual-${safeHost}`
   manualKeyForm.privateKey = ''
-  manualKeyForm.publicKey = executionValues.public_key || ''
+  manualKeyForm.publicKey = stringifyExecutionValue(executionValues.public_key)
   manualKeyForm.passphrase = ''
   manualKeyForm.comment = ''
   showManualKeyDialog.value = true
@@ -1171,7 +1236,7 @@ const saveScript = async () => {
       defaultValue: variable.defaultValue || '',
       required: Boolean(variable.required),
       options:
-        variable.type === 'select'
+        variable.type === 'select' || variable.type === 'multiselect'
           ? (variable.optionsText || '')
               .split(/[,，]/)
               .map((option) => option.trim())
@@ -1527,7 +1592,7 @@ const validateTerminalReady = () => {
 
 const validateRequiredVariables = () => {
   const missing = selectedScript.value?.variables.filter(
-    (variable) => variable.required && !String(executionValues[variable.name] || '').trim()
+    (variable) => variable.required && isEmptyExecutionValue(executionValues[variable.name])
   )
 
   if (missing?.length) {
@@ -1635,6 +1700,52 @@ const buildCheckedRunCommand = (options: { showSyncMessage?: boolean } = {}) => 
 
 const ensureTrailingNewline = (value: string) => (value.endsWith('\n') ? value : `${value}\n`)
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const stringifyExecutionValue = (value: ExecutionValue | undefined) =>
+  Array.isArray(value) ? value.join(' ') : String(value || '')
+const isEmptyExecutionValue = (value: ExecutionValue | undefined) =>
+  Array.isArray(value) ? value.length === 0 : !String(value || '').trim()
+const parseMultiSelectDefault = (value: string) =>
+  String(value || '')
+    .split(/[\s,，;；]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+const parseVariableOption = (option: string): VariableOptionItem => {
+  const raw = String(option || '')
+  const parts = raw.split('|').map((item) => item.trim())
+  if (parts.length >= 3) {
+    return {
+      raw,
+      value: parts[0],
+      group: parts[1],
+      label: parts.slice(2).join('|') || parts[0]
+    }
+  }
+  if (parts.length === 2) {
+    return { raw, value: parts[0], group: '', label: parts[1] || parts[0] }
+  }
+  return { raw, value: raw.trim(), group: '', label: raw.trim() }
+}
+const parsedVariableOptions = (variable: LazyScriptVariable) =>
+  (variable.options || []).map(parseVariableOption).filter((option) => option.value)
+const groupedVariableOptions = (variable: LazyScriptVariable) => {
+  const groups = new Map<string, VariableOptionItem[]>()
+  parsedVariableOptions(variable).forEach((option) => {
+    const label = option.group || '其他'
+    groups.set(label, [...(groups.get(label) || []), option])
+  })
+  return Array.from(groups.entries()).map(([label, options]) => ({ label, options }))
+}
+const hasGroupedVariableOptions = (variable: LazyScriptVariable) =>
+  parsedVariableOptions(variable).some((option) => option.group)
+const getMultiSelectValue = (name: string) => {
+  const value = executionValues[name]
+  return Array.isArray(value) ? value : parseMultiSelectDefault(String(value || ''))
+}
+const setMultiSelectValue = (name: string, value: unknown) => {
+  executionValues[name] = Array.isArray(value)
+    ? value.map((item) => String(item)).filter(Boolean)
+    : []
+}
 const isValidVariableName = (value: string) => /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value.trim())
 const buildHeredocDelimiter = (content: string) => {
   let delimiter = 'MSHELL_SCRIPT'
@@ -2098,6 +2209,99 @@ const toTerminalLineEndings = (value: string) =>
 .variable-field em {
   color: var(--danger-color);
   font-style: normal;
+}
+
+.variable-field-wide {
+  grid-column: 1 / -1;
+}
+
+.variable-check-panel {
+  width: 100%;
+  max-height: 360px;
+  box-sizing: border-box;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
+}
+
+.variable-check-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.variable-check-group {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+}
+
+.variable-check-group-title {
+  padding-top: 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.variable-check-list {
+  display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  gap: 8px;
+}
+
+.variable-check-panel :deep(.el-checkbox) {
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  min-height: 32px;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  margin-right: 0;
+  padding: 6px 10px;
+  align-items: center;
+  border-color: var(--border-light);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-secondary) 86%, transparent);
+}
+
+.variable-check-panel :deep(.el-checkbox:hover),
+.variable-check-panel :deep(.el-checkbox.is-checked) {
+  border-color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 10%, var(--bg-secondary));
+}
+
+.variable-check-panel :deep(.el-checkbox__label) {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@container lazy-detail (max-width: 620px) {
+  .variable-check-group {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .variable-check-group-title {
+    padding-top: 0;
+  }
+
+  .variable-check-list {
+    gap: 6px;
+  }
 }
 
 .preview-section {

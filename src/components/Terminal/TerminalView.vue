@@ -11,7 +11,7 @@ import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import { getTheme } from '@/utils/terminal-themes'
-import { terminalManager } from '@/utils/terminal-manager'
+import { terminalManager, isSensitiveInputPrompt } from '@/utils/terminal-manager'
 import { terminalShortcutsManager } from '@/utils/terminal-shortcuts'
 import { useAIStore } from '@/stores/ai'
 import { useAppStore } from '@/stores/app'
@@ -84,6 +84,18 @@ let scheduledFitTimers: ReturnType<typeof setTimeout>[] = []
 
 const normalizeDataForRemote = (data: string) => (data === '\b' ? '\x7F' : data)
 const removeLastInputCharacter = (value: string) => Array.from(value).slice(0, -1).join('')
+
+const getCurrentTerminalLine = () => {
+  if (!terminal) return ''
+
+  try {
+    const buffer = terminal.buffer.active
+    const lineIndex = buffer.baseY + buffer.cursorY
+    return buffer.getLine(lineIndex)?.translateToString(true) || ''
+  } catch {
+    return ''
+  }
+}
 
 const resolveTerminalTheme = (options: TerminalOptions) => {
   const theme =
@@ -204,10 +216,16 @@ onMounted(() => {
     terminal.onData((data) => {
       // 获取终端实例
       const inst = terminalManager.get(props.connectionId)
+      const isSensitiveInput =
+        inst?.echoEnabled === false || isSensitiveInputPrompt(getCurrentTerminalLine())
+
+      if (isSensitiveInput && inst) {
+        inst.echoEnabled = false
+      }
 
       // 更新当前行缓冲（用于自动补全）
       // 注意：当 echoEnabled=false（密码输入模式）时，不更新缓冲，避免密码被记录或触发补全
-      if (inst?.echoEnabled === false) {
+      if (isSensitiveInput) {
         // 密码输入模式：只处理 Enter（清空缓冲），不记录字符
         if (data === '\r' || data === '\n') {
           currentCommand = ''
@@ -246,7 +264,7 @@ onMounted(() => {
 
       // 通过回调引用发射输入事件（解决闭包陷阱）
       // 仅在终端处于正常回显模式时触发补全（密码输入时 echoEnabled=false，禁用补全）
-      if (inst?.inputCallback && inst?.echoEnabled !== false) {
+      if (inst?.inputCallback && !isSensitiveInput) {
         inst.inputCallback(data, currentLineBuffer)
 
         // 发射光标位置（用于定位补全弹窗）

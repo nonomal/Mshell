@@ -649,7 +649,7 @@ export interface ElectronAPI {
     search: (query: string) => Promise<ApiResult<any[]>>
     getAllCategories: () => Promise<ApiResult<string[]>>
     extractVariables: (content: string) => Promise<ApiResult<string[]>>
-    render: (content: string, values: Record<string, string>) => Promise<ApiResult<string>>
+    render: (content: string, values: Record<string, string | string[]>) => Promise<ApiResult<string>>
     export: (filePath: string) => Promise<ApiResult<any>>
     import: (filePath: string) => Promise<ApiResult<any>>
   }

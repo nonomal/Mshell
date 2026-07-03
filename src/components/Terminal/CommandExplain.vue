@@ -100,6 +100,7 @@ const localExplanation = ref<CommandExplanation | null>(null)
 const aiExplanation = ref('')
 const loading = ref(false)
 const aiRequested = ref(false)
+let currentRequestId = 0
 
 const positionStyle = computed(() => {
   const { x, y } = props.position
@@ -181,6 +182,8 @@ const formattedAIExplanation = computed(() => {
 
 // 监听命令变化
 watch(() => props.command, (newCommand) => {
+  currentRequestId++
+  loading.value = false
   if (newCommand && props.visible) {
     // 先尝试本地解释
     localExplanation.value = getLocalCommandExplanation(newCommand)
@@ -191,9 +194,11 @@ watch(() => props.command, (newCommand) => {
 
 watch(() => props.visible, (newVal) => {
   if (!newVal) {
+    currentRequestId++
     localExplanation.value = null
     aiExplanation.value = ''
     aiRequested.value = false
+    loading.value = false
   }
 })
 
@@ -203,20 +208,23 @@ const handleClose = () => {
 
 const requestAIExplanation = async () => {
   if (!props.command) return
-  
+
+  const requestId = ++currentRequestId
+  const command = props.command
   aiRequested.value = true
   loading.value = true
-  
+
   try {
     // 检查 AI API 是否可用
     if (!window.electronAPI?.ai?.request) {
+      if (requestId !== currentRequestId) return
       aiExplanation.value = 'AI 功能未配置'
       return
     }
-    
+
     const prompt = `请详细解释以下 Linux/Unix 命令的作用和用法：
 
-命令：${props.command}
+命令：${command}
 
 请包含：
 1. 命令的主要功能
@@ -227,16 +235,22 @@ const requestAIExplanation = async () => {
 请用简洁清晰的中文回答。`
 
     const result = await window.electronAPI.ai.request('explain', prompt)
-    
+    if (requestId !== currentRequestId || !props.visible || props.command !== command) {
+      return
+    }
+
     if (result?.success && result.data) {
       aiExplanation.value = result.data
     } else {
       aiExplanation.value = result?.error || '获取解释失败'
     }
   } catch (error: any) {
+    if (requestId !== currentRequestId) return
     aiExplanation.value = error?.message || 'AI 请求失败'
   } finally {
-    loading.value = false
+    if (requestId === currentRequestId) {
+      loading.value = false
+    }
   }
 }
 

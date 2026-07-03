@@ -55,11 +55,14 @@ const serializeScript = (script: LazyScript) => ({
   updatedAt: String(script.updatedAt)
 })
 
+const ensureLazyScriptManagerInitialized = () => lazyScriptManager.initialize()
+
 export function registerLazyScriptHandlers() {
   lazyScriptManager.initialize().catch(console.error)
 
   ipcMain.handle('lazyScript:getAll', async () => {
     try {
+      await ensureLazyScriptManagerInitialized()
       return {
         success: true,
         data: lazyScriptManager.getAll().map(serializeScript)
@@ -71,6 +74,7 @@ export function registerLazyScriptHandlers() {
 
   ipcMain.handle('lazyScript:get', async (_event, id: string) => {
     try {
+      await ensureLazyScriptManagerInitialized()
       const script = lazyScriptManager.get(id)
       if (!script) {
         return { success: false, error: '懒人脚本不存在' }
@@ -83,6 +87,7 @@ export function registerLazyScriptHandlers() {
 
   ipcMain.handle('lazyScript:create', async (_event, data: any) => {
     try {
+      await ensureLazyScriptManagerInitialized()
       const script = await lazyScriptManager.create(cleanScriptData(data))
       return { success: true, data: serializeScript(script) }
     } catch (error: any) {
@@ -92,6 +97,7 @@ export function registerLazyScriptHandlers() {
 
   ipcMain.handle('lazyScript:update', async (_event, id: string, data: any) => {
     try {
+      await ensureLazyScriptManagerInitialized()
       await lazyScriptManager.update(id, cleanScriptData(data))
       return { success: true }
     } catch (error: any) {
@@ -101,6 +107,7 @@ export function registerLazyScriptHandlers() {
 
   ipcMain.handle('lazyScript:delete', async (_event, id: string) => {
     try {
+      await ensureLazyScriptManagerInitialized()
       await lazyScriptManager.delete(id)
       return { success: true }
     } catch (error: any) {
@@ -110,6 +117,7 @@ export function registerLazyScriptHandlers() {
 
   ipcMain.handle('lazyScript:incrementUsage', async (_event, id: string) => {
     try {
+      await ensureLazyScriptManagerInitialized()
       await lazyScriptManager.incrementUsage(id)
       return { success: true }
     } catch (error: any) {
@@ -119,6 +127,7 @@ export function registerLazyScriptHandlers() {
 
   ipcMain.handle('lazyScript:getByCategory', async (_event, category: string) => {
     try {
+      await ensureLazyScriptManagerInitialized()
       return {
         success: true,
         data: lazyScriptManager.getByCategory(category).map(serializeScript)
@@ -130,6 +139,7 @@ export function registerLazyScriptHandlers() {
 
   ipcMain.handle('lazyScript:getByTag', async (_event, tag: string) => {
     try {
+      await ensureLazyScriptManagerInitialized()
       return {
         success: true,
         data: lazyScriptManager.getByTag(tag).map(serializeScript)
@@ -141,6 +151,7 @@ export function registerLazyScriptHandlers() {
 
   ipcMain.handle('lazyScript:search', async (_event, query: string) => {
     try {
+      await ensureLazyScriptManagerInitialized()
       return {
         success: true,
         data: lazyScriptManager.search(query).map(serializeScript)
@@ -152,6 +163,7 @@ export function registerLazyScriptHandlers() {
 
   ipcMain.handle('lazyScript:getAllCategories', async () => {
     try {
+      await ensureLazyScriptManagerInitialized()
       return { success: true, data: lazyScriptManager.getAllCategories() }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -168,8 +180,9 @@ export function registerLazyScriptHandlers() {
 
   ipcMain.handle(
     'lazyScript:render',
-    async (_event, content: string, values: Record<string, string>) => {
+    async (_event, content: string, values: Record<string, string | string[]>) => {
       try {
+        await ensureLazyScriptManagerInitialized()
         return {
           success: true,
           data: lazyScriptManager.render(String(content || ''), values || {})
@@ -182,6 +195,7 @@ export function registerLazyScriptHandlers() {
 
   ipcMain.handle('lazyScript:export', async (_event, filePath: string) => {
     try {
+      await ensureLazyScriptManagerInitialized()
       const scripts = lazyScriptManager.getAll().map(serializeScript)
       const exportData = {
         version: '1.0.0',
@@ -197,6 +211,7 @@ export function registerLazyScriptHandlers() {
 
   ipcMain.handle('lazyScript:import', async (_event, filePath: string) => {
     try {
+      await ensureLazyScriptManagerInitialized()
       const content = await fs.readFile(filePath, 'utf-8')
       const importData = JSON.parse(content)
       if (!Array.isArray(importData.lazyScripts)) {

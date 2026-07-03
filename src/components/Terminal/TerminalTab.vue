@@ -747,9 +747,9 @@ const explainCommand = ref('')
 
 // 命令智能设置（从设置中加载）
 const commandIntelligenceSettings = ref({
-  commandAutocomplete: true,
-  aiCommandSuggest: true,
-  commandExplain: true
+  commandAutocomplete: false,
+  aiCommandSuggest: false,
+  commandExplain: false
 })
 
 // Ghost text 请求 ID（用于取消过期请求）
@@ -1220,10 +1220,6 @@ const loadCommandIntelligenceSettings = async () => {
   try {
     const settings = await window.electronAPI.settings.get()
     applyCommandIntelligenceSettings(settings)
-    console.log(
-      '[TerminalTab] Loaded command intelligence settings:',
-      commandIntelligenceSettings.value
-    )
   } catch (error) {
     console.error('Failed to load command intelligence settings:', error)
   }
@@ -1233,9 +1229,9 @@ const applyCommandIntelligenceSettings = (settings: any) => {
   const sshSettings = settings?.ssh || {}
 
   commandIntelligenceSettings.value = {
-    commandAutocomplete: sshSettings.commandAutocomplete !== false,
-    aiCommandSuggest: sshSettings.aiCommandSuggest !== false,
-    commandExplain: sshSettings.commandExplain !== false
+    commandAutocomplete: sshSettings.commandAutocomplete === true,
+    aiCommandSuggest: sshSettings.aiCommandSuggest === true,
+    commandExplain: sshSettings.commandExplain === true
   }
 }
 
@@ -1366,12 +1362,27 @@ onMounted(async () => {
   // 获取 appStore 用于检查当前激活的标签页
   const appStore = useAppStore()
 
+  const isCommandIntelligenceKeyTarget = (target: EventTarget | null) => {
+    const selectors = '.terminal-container, .autocomplete-popup, .ai-command-suggest, .command-explain'
+    const targetElement = target instanceof Element ? target : null
+    const activeElement = document.activeElement instanceof Element ? document.activeElement : null
+
+    return Boolean(
+      targetElement?.closest(selectors) ||
+      activeElement?.closest(selectors)
+    )
+  }
+
   // 添加键盘事件监听（处理补全弹窗、Ghost Text、AI 命令）
   const handleKeyDown = (e: KeyboardEvent) => {
     // 首先检查当前标签页是否激活，避免多标签页时的事件冲突
     // 只有当前激活的标签页才处理键盘事件
     if (appStore.activeTab !== props.connectionId) {
       return // 不是当前激活的标签页，不处理
+    }
+
+    if (!isCommandIntelligenceKeyTarget(e.target)) {
+      return
     }
 
     // 0. 命令解释模式
@@ -1891,6 +1902,7 @@ const executeSnippet = async () => {
 
 // AI 命令建议防抖定时器
 let aiSuggestDebounceTimer: ReturnType<typeof setTimeout> | null = null
+const CLEAR_CURRENT_TERMINAL_LINE = '\x15\x0b'
 
 // 清除所有智能功能状态（用于模式切换时避免状态污染）
 const clearAllIntelligenceStates = (except?: 'autocomplete' | 'aiSuggest' | 'explain') => {
@@ -1920,8 +1932,6 @@ const clearAllIntelligenceStates = (except?: 'autocomplete' | 'aiSuggest' | 'exp
 
 // 处理终端输入（用于智能补全）
 const handleTerminalInput = async (input: string) => {
-  console.log(`[TerminalTab] handleTerminalInput called: input="${input}"`)
-
   // 保存原始输入用于各种模式判断
   const rawInput = input
 
@@ -1958,7 +1968,6 @@ const handleTerminalInput = async (input: string) => {
   // 1. AI 命令模式 (# 开头) - 检查开关
   if (rawInput.startsWith('#') && commandIntelligenceSettings.value.aiCommandSuggest) {
     const query = rawInput.substring(1).trim()
-    console.log('[TerminalTab] AI command mode, input:', rawInput, 'query:', query)
 
     // 更新 autocompleteInput 以便执行时能正确清除输入
     autocompleteInput.value = rawInput
@@ -1980,7 +1989,6 @@ const handleTerminalInput = async (input: string) => {
         // 只有当 query 真正变化时才更新（触发 AI 请求）
         if (aiCommandQuery.value !== query) {
           aiCommandQuery.value = query
-          console.log('[TerminalTab] AI query updated:', query)
         }
       }, 800)
     } else {
@@ -2179,10 +2187,10 @@ const acceptGhostText = () => {
 const handleAICommandExecute = async (command: string) => {
   if (!command) return
 
-  // 使用 Ctrl+U 清除当前行输入，然后发送新命令
+  // 使用 Ctrl+U + Ctrl+K 清除光标前后内容，然后发送新命令
   // \x15 = Ctrl+U (清除光标前的所有内容)
-  // \x0b = Ctrl+K (清除光标后的所有内容，可选)
-  window.electronAPI.ssh.write(props.connectionId, '\x15' + command + '\r')
+  // \x0b = Ctrl+K (清除光标后的所有内容)
+  window.electronAPI.ssh.write(props.connectionId, CLEAR_CURRENT_TERMINAL_LINE + command + '\r')
 
   // 记录 AI 生成的命令到历史
   try {
@@ -2214,8 +2222,8 @@ const handleAICommandExecute = async (command: string) => {
 const handleAICommandEdit = (command: string) => {
   if (!command) return
 
-  // 使用 Ctrl+U 清除当前行输入，然后发送新命令（不执行）
-  window.electronAPI.ssh.write(props.connectionId, '\x15' + command)
+  // 使用 Ctrl+U + Ctrl+K 清除当前行输入，然后发送新命令（不执行）
+  window.electronAPI.ssh.write(props.connectionId, CLEAR_CURRENT_TERMINAL_LINE + command)
 
   // 更新命令缓冲
   if (terminalRef.value) {
