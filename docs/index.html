@@ -3,463 +3,426 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="MShell 是面向开发者和运维人员的跨端 SSH 终端与服务器管理工具，提供 Windows 桌面端、Android 客户端、会话管理、命令片段、SSH 密钥、SFTP、监控和加密同步备份。">
-    <meta name="keywords" content="MShell,SSH客户端,Windows SSH,Android SSH,终端,服务器管理,SFTP,命令片段,SSH密钥,同步备份">
-    <meta property="og:title" content="MShell - 跨端 SSH 终端与服务器管理工具">
-    <meta property="og:description" content="桌面端与 Android 客户端协同使用，支持 SSH 会话、命令片段、SSH 密钥、SFTP 文件管理、加密备份和 GitHub/GitLab 同步。">
+    <meta name="description" content="MShell 是面向开发者、站长和运维人员的 SSH 服务器管理工作台，支持 Windows 桌面端、Android 移动端、会话管理、SFTP、命令片段、懒人脚本、SSH 密钥、终端背景、加密备份和 GitHub/GitLab 同步。">
+    <meta name="keywords" content="MShell,SSH客户端,Windows SSH,Android SSH,SFTP,服务器管理,命令片段,懒人脚本,SSH密钥,GitHub Gist同步,GitLab Snippet同步">
+    <meta property="og:title" content="MShell - SSH 服务器管理工作台">
+    <meta property="og:description" content="把 SSH 会话、文件传输、命令片段、懒人脚本、密钥管理、同步备份和移动端应急维护整合到一个顺手的工作台里。">
     <meta property="og:image" content="logo.png">
+    <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
-    <title>MShell - 跨端 SSH 终端与服务器管理工具</title>
+    <title>MShell - SSH 服务器管理工作台</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="icon" type="image/png" href="favicon.png">
 </head>
 <body>
-    <nav class="navbar">
-        <div class="container">
-            <div class="nav-brand">
-                <img src="logo.png" alt="MShell Logo" class="logo">
-                <span class="brand-name">MShell</span>
-            </div>
-            <ul class="nav-menu">
-                <li><a href="#features">功能特性</a></li>
-                <li><a href="#clients">客户端</a></li>
-                <li><a href="#screenshots">产品截图</a></li>
-                <li><a href="#download">立即下载</a></li>
-                <li><a href="#docs">快速开始</a></li>
-            </ul>
-            <button class="mobile-menu-toggle" aria-label="Toggle menu">
+    <header class="site-header">
+        <nav class="navbar" aria-label="主导航">
+            <a class="brand" href="#top" aria-label="MShell 首页">
+                <img src="logo.png" alt="MShell Logo" class="brand-logo">
+                <span class="brand-text">MShell</span>
+            </a>
+            <button class="nav-toggle" type="button" aria-label="打开菜单" aria-expanded="false">
                 <span></span>
                 <span></span>
                 <span></span>
             </button>
-        </div>
-    </nav>
+            <div class="nav-links">
+                <a href="#features">核心功能</a>
+                <a href="#scripts">懒人脚本</a>
+                <a href="#sync">同步安全</a>
+                <a href="#screenshots">产品截图</a>
+                <a href="#download">下载</a>
+            </div>
+        </nav>
+    </header>
 
-    <section class="hero">
-        <div class="hero-background">
-            <div class="hero-grid"></div>
-        </div>
-        <div class="container">
-            <div class="hero-content">
-                <h1 class="hero-title">
-                    <span class="gradient-text glow-effect">MShell</span>
-                    <br>
-                    <span class="subtitle-text">跨端 SSH 终端与服务器管理工具</span>
-                </h1>
-                <p class="hero-subtitle">
-                    为开发者、站长和运维人员打造的现代化 SSH 工作台。<br>
-                    桌面端负责重度管理，Android 端负责移动连接，数据通过加密备份和远程同步保持一致。
-                </p>
-                <div class="hero-actions">
-                    <a href="#download" class="btn btn-primary btn-large">
-                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-                        </svg>
-                        下载 MShell
-                    </a>
-                    <a href="#clients" class="btn btn-secondary btn-large">查看客户端</a>
-                </div>
-                <div class="hero-stats">
-                    <div class="stat-item">
-                        <div class="stat-value">v0.2.6</div>
-                        <div class="stat-label">当前版本</div>
+    <main id="top">
+        <section class="hero section-band">
+            <div class="container hero-grid">
+                <div class="hero-copy">
+                    <div class="eyebrow">MShell v0.2.8 · Windows 桌面端 + Android 移动端</div>
+                    <h1>把 SSH 终端、文件传输和服务器脚本整理成一个工作台</h1>
+                    <p class="hero-lead">
+                        MShell 面向开发者、站长和运维人员，把会话管理、多标签终端、SFTP、命令片段、懒人脚本、SSH 密钥、同步备份和移动端应急维护放在同一套工作流里。
+                    </p>
+                    <div class="hero-actions">
+                        <a class="btn btn-primary" href="https://github.com/inspoaibox/Mshell/releases" target="_blank">下载最新版</a>
+                        <a class="btn btn-ghost" href="#features">查看功能</a>
                     </div>
-                    <div class="stat-item">
-                        <div class="stat-value">Windows + Android</div>
-                        <div class="stat-label">多端使用</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value">加密同步</div>
-                        <div class="stat-label">备份与迁移</div>
+                    <div class="hero-stats" aria-label="产品能力概览">
+                        <div>
+                            <strong>SSH / SFTP</strong>
+                            <span>连接与文件管理</span>
+                        </div>
+                        <div>
+                            <strong>Gist / GitLab</strong>
+                            <span>远程同步备份</span>
+                        </div>
+                        <div>
+                            <strong>Scripts</strong>
+                            <span>常用维护脚本</span>
+                        </div>
                     </div>
                 </div>
-            </div>
-            <div class="hero-image">
-                <div class="terminal-window">
-                    <div class="terminal-header">
-                        <div class="terminal-buttons">
-                            <span class="btn-close"></span>
-                            <span class="btn-minimize"></span>
-                            <span class="btn-maximize"></span>
+                <div class="hero-showcase" aria-label="MShell 产品界面预览">
+                    <div class="product-window">
+                        <div class="window-bar">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                            <p>MShell / Server Workspace</p>
                         </div>
-                        <div class="terminal-title">MShell SSH Session</div>
+                        <img src="screenshots/main.png" alt="MShell 主界面截图">
                     </div>
-                    <div class="terminal-body">
-                        <div class="terminal-line">
-                            <span class="prompt">$</span>
-                            <span class="command">ssh root@203.0.113.12</span>
+                    <div class="terminal-card">
+                        <div class="terminal-card-head">
+                            <span>root@server</span>
+                            <span>ready</span>
                         </div>
-                        <div class="terminal-line">
-                            <span class="output">Connected to 203.0.113.12</span>
-                        </div>
-                        <div class="terminal-line">
-                            <span class="prompt">$</span>
-                            <span class="command typing">df -h</span>
-                            <span class="cursor"></span>
-                        </div>
+                        <pre><code><span class="prompt">$</span> <span class="js-terminal-command">bash ~/.mshell/scripts/server-init.sh</span>
+<span class="muted">checking firewall, sshd, packages...</span>
+<span class="success">done. server profile saved.</span></code></pre>
                     </div>
                 </div>
             </div>
-        </div>
-    </section>
+        </section>
 
-    <section id="clients" class="clients">
-        <div class="container">
-            <div class="section-header">
-                <h2 class="section-title">桌面端与 Android 客户端协同</h2>
-                <p class="section-subtitle">同一套会话、片段和密钥数据，覆盖日常维护与移动应急场景</p>
+        <section class="intro-strip">
+            <div class="container intro-grid">
+                <div>
+                    <span>适合谁</span>
+                    <strong>开发者、站长、运维、服务器长期维护者</strong>
+                </div>
+                <div>
+                    <span>解决什么</span>
+                    <strong>连接分散、命令重复、文件传输割裂、备份迁移麻烦</strong>
+                </div>
+                <div>
+                    <span>核心思路</span>
+                    <strong>桌面端重度管理，手机端移动应急，数据加密同步</strong>
+                </div>
             </div>
-            <div class="clients-grid">
-                <div class="client-card featured">
-                    <div class="client-meta">Windows 桌面端</div>
-                    <h3>完整的服务器管理工作台</h3>
-                    <p>适合长期使用和重度操作：多标签终端、分屏、SFTP 文件管理、在线编辑、端口转发、服务器监控、命令历史、AI 助手和完整设置中心。</p>
-                    <ul class="client-list">
-                        <li>SSH / RDP / VNC 会话管理</li>
-                        <li>SFTP 上传、下载、权限、在线预览与编辑</li>
-                        <li>命令片段、快捷命令、历史命令与智能补全</li>
-                        <li>SSH 密钥管理、会话锁定、加密备份和同步</li>
+        </section>
+
+        <section id="features" class="section">
+            <div class="container">
+                <div class="section-heading">
+                    <p class="section-kicker">Core Features</p>
+                    <h2>围绕 SSH 维护场景设计，而不是只做一个终端窗口</h2>
+                    <p>从连接、输入、文件、脚本到备份迁移，尽量减少重复操作和低价值切换。</p>
+                </div>
+
+                <div class="feature-grid">
+                    <article class="feature-card">
+                        <div class="feature-icon">SSH</div>
+                        <h3>会话管理</h3>
+                        <p>保存主机、端口、账号、认证方式、分组、服务商、地区、费用和到期时间，支持搜索、排序和快速连接。</p>
+                    </article>
+                    <article class="feature-card">
+                        <div class="feature-icon">TAB</div>
+                        <h3>多标签与分屏终端</h3>
+                        <p>支持多会话标签、垂直分屏和四宫格分屏，适合多台服务器并行维护、对比输出和批量排查。</p>
+                    </article>
+                    <article class="feature-card">
+                        <div class="feature-icon">SFTP</div>
+                        <h3>文件传输工作台</h3>
+                        <p>SFTP 支持上传、下载、队列、暂停恢复、同名处理、权限修改、在线预览与文本编辑。</p>
+                    </article>
+                    <article class="feature-card">
+                        <div class="feature-icon">CMD</div>
+                        <h3>命令片段与快捷命令</h3>
+                        <p>沉淀高频命令和多行片段，支持分类、变量、复制、发送到指定终端和运行前确认。</p>
+                    </article>
+                    <article class="feature-card">
+                        <div class="feature-icon">KEY</div>
+                        <h3>SSH 密钥管理</h3>
+                        <p>支持密钥生成、导入、编辑、指纹显示、会话绑定，并可配合脚本完成公钥部署和登录加固。</p>
+                    </article>
+                    <article class="feature-card">
+                        <div class="feature-icon">AI</div>
+                        <h3>AI 助手与命令智能</h3>
+                        <p>为命令解释、错误分析、补全建议和常见维护操作提供辅助，相关智能能力可在设置中独立开关。</p>
+                    </article>
+                    <article class="feature-card">
+                        <div class="feature-icon">LOG</div>
+                        <h3>日志与审计</h3>
+                        <p>提供系统日志、审计日志和操作记录能力，日志开关可按需启用，避免不必要的内存和存储消耗。</p>
+                    </article>
+                    <article class="feature-card">
+                        <div class="feature-icon">UI</div>
+                        <h3>外观与终端背景</h3>
+                        <p>支持现代、简洁、复古等外观风格，终端可设置全局或单会话背景图与透明度，兼顾可读性和个性化。</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <section class="workflow section-band">
+            <div class="container workflow-grid">
+                <div class="section-heading align-left">
+                    <p class="section-kicker">Workflow</p>
+                    <h2>一次维护任务，从连接到收尾都能在同一处完成</h2>
+                    <p>MShell 的目标不是替代每一个专业工具，而是把 SSH 日常维护中最常用的动作串成稳定、可复用的流程。</p>
+                </div>
+                <div class="workflow-list">
+                    <div class="workflow-item">
+                        <span>01</span>
+                        <div>
+                            <h3>建立连接</h3>
+                            <p>从会话列表快速连接，按分组、环境、服务商或到期信息管理服务器。</p>
+                        </div>
+                    </div>
+                    <div class="workflow-item">
+                        <span>02</span>
+                        <div>
+                            <h3>执行维护</h3>
+                            <p>调用命令片段、历史命令、智能补全或懒人脚本，减少重复粘贴和误操作。</p>
+                        </div>
+                    </div>
+                    <div class="workflow-item">
+                        <span>03</span>
+                        <div>
+                            <h3>传输文件</h3>
+                            <p>在 SFTP 面板完成上传下载、权限修改、在线预览和编辑，传输队列集中查看。</p>
+                        </div>
+                    </div>
+                    <div class="workflow-item">
+                        <span>04</span>
+                        <div>
+                            <h3>同步迁移</h3>
+                            <p>会话、分组、片段、密钥和关键设置可通过加密备份或远程同步迁移到其他设备。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="scripts" class="section scripts-section">
+            <div class="container scripts-grid">
+                <div>
+                    <div class="section-heading align-left">
+                        <p class="section-kicker">Lazy Scripts</p>
+                        <h2>懒人脚本：把常见服务器操作沉淀成可复用脚本文件</h2>
+                        <p>脚本不是简单的一段粘贴命令，而是可部署到远程主机的通用脚本文件。运行前支持选择目标终端与二次确认，减少把脚本发错服务器的风险。</p>
+                    </div>
+                    <div class="script-tags">
+                        <span>环境初始化</span>
+                        <span>SSH 加固</span>
+                        <span>防火墙端口</span>
+                        <span>常用工具安装</span>
+                        <span>用户管理</span>
+                        <span>磁盘排查</span>
+                    </div>
+                </div>
+                <div class="script-panel">
+                    <div class="script-panel-header">
+                        <span>脚本示例</span>
+                        <strong>修改 SSH 端口并放行防火墙</strong>
+                    </div>
+                    <ul>
+                        <li>检测 sshd 配置文件并备份</li>
+                        <li>识别 ufw、firewalld、iptables、nftables 等防火墙</li>
+                        <li>放行新端口并尽量持久化规则</li>
+                        <li>重启 SSH 服务前做关键安全提示</li>
+                        <li>执行成功后可同步更新当前 SSH 会话端口</li>
                     </ul>
-                </div>
-                <div class="client-card">
-                    <div class="client-meta">Android 客户端</div>
-                    <h3>移动端 SSH 与数据管理</h3>
-                    <p>适合手机上快速连接、复制或执行片段、维护 SSH 密钥，并继续使用桌面端同步过来的会话信息、分类和服务器管理字段。</p>
-                    <ul class="client-list">
-                        <li>新增、编辑、删除 SSH 会话和分类</li>
-                        <li>命令片段分类、复制和在当前终端中执行</li>
-                        <li>SSH 密钥新增、编辑和本地文件导入</li>
-                        <li>PIN / 系统生物识别锁定保护</li>
-                    </ul>
+                    <pre><code>bash ~/.mshell/scripts/change-ssh-port.sh</code></pre>
                 </div>
             </div>
-            <div class="shared-data">
-                <div class="shared-card">
-                    <h3>同步数据</h3>
-                    <p>支持桌面端备份 JSON、.mshell 加密备份、GitHub Gist 和 GitLab Snippet 同步 JSON。会话、分组、命令片段、SSH 密钥和关键设置可跨端导入。</p>
+        </section>
+
+        <section id="sync" class="section sync-section">
+            <div class="container">
+                <div class="section-heading">
+                    <p class="section-kicker">Sync & Security</p>
+                    <h2>同步、备份和安全边界清晰可控</h2>
+                    <p>适合多设备使用，也适合在重装系统、换电脑或临时使用 Android 端时快速恢复工作环境。</p>
                 </div>
-                <div class="shared-card">
-                    <h3>长期同步配置</h3>
-                    <p>Android 端可保存同步 URL、Token 和同步加密密码，支持“同步”“下载到本地”“上传本地”，避免每次只做一次性导入。</p>
-                </div>
-                <div class="shared-card">
-                    <h3>安全边界</h3>
-                    <p>备份和同步数据支持加密密码，移动端可显示/隐藏 Token 与密码以减少输入错误；本地安全锁可优先调用系统生物识别。</p>
+                <div class="sync-grid">
+                    <article class="sync-card">
+                        <h3>完整可迁移备份</h3>
+                        <p>支持普通 JSON、加密 `.mshell` 备份、同步 JSON 导入导出。会话、分组、命令片段、SSH 密钥和关键设置可作为整体迁移。</p>
+                    </article>
+                    <article class="sync-card">
+                        <h3>GitHub / GitLab 远程同步</h3>
+                        <p>支持 GitHub Gist 和 GitLab Snippet，同步配置包含 URL、Token 和同步加密密码。Token 建议使用最小权限。</p>
+                    </article>
+                    <article class="sync-card">
+                        <h3>安全锁与敏感信息保护</h3>
+                        <p>桌面端支持会话锁定与凭据保护，Android 端支持 PIN 和系统生物识别。加密备份密码丢失后无法恢复，请妥善保存。</p>
+                    </article>
                 </div>
             </div>
-        </div>
-    </section>
+        </section>
 
-    <section id="features" class="features">
-        <div class="container">
-            <div class="section-header">
-                <h2 class="section-title">核心功能</h2>
-                <p class="section-subtitle">从连接、文件、命令到同步备份，覆盖服务器维护的常用工作流</p>
-            </div>
-            <div class="features-grid">
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <rect x="3" y="4" width="18" height="14" rx="2"/>
-                            <path d="M8 20h8M12 18v2M8 9l3 3-3 3M13 15h3"/>
-                        </svg>
-                    </div>
-                    <h3 class="feature-title">SSH 会话管理</h3>
-                    <p class="feature-description">保存服务器、账号、端口、认证方式、服务商、地区、到期时间和费用信息，支持分组、搜索、排序和快速连接。</p>
+        <section class="clients section-band">
+            <div class="container">
+                <div class="section-heading">
+                    <p class="section-kicker">Clients</p>
+                    <h2>桌面端负责重度管理，Android 端负责移动应急</h2>
                 </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <rect x="3" y="3" width="18" height="18" rx="2"/>
-                            <path d="M3 9h18M9 21V9"/>
-                        </svg>
-                    </div>
-                    <h3 class="feature-title">多标签与分屏终端</h3>
-                    <p class="feature-description">桌面端支持多连接标签、垂直分屏和四宫格分屏，适合同时维护多台服务器或对比执行结果。</p>
-                </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-                        </svg>
-                    </div>
-                    <h3 class="feature-title">SFTP 文件管理</h3>
-                    <p class="feature-description">内置文件传输面板，支持上传下载、批量任务、拖拽、权限设置、在线预览和文本编辑。</p>
-                </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-                        </svg>
-                    </div>
-                    <h3 class="feature-title">命令片段与快捷命令</h3>
-                    <p class="feature-description">沉淀常用命令、脚本和多行片段，支持分类、标签、变量替换，并可在当前终端会话中快速调用。</p>
-                </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <circle cx="12" cy="12" r="10"/>
-                            <path d="M8 12h8M12 8v8"/>
-                        </svg>
-                    </div>
-                    <h3 class="feature-title">智能输入与命令历史</h3>
-                    <p class="feature-description">提供命令历史、搜索、收藏、路径补全、命令补全和终端内联建议，减少重复输入。</p>
-                </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path d="M21 2l-2 2M7.5 13.5a5 5 0 1 1 7.07 0L12 16l-2.5-2.5z"/>
-                            <path d="M12 16v6M9 19h6"/>
-                        </svg>
-                    </div>
-                    <h3 class="feature-title">SSH 密钥管理</h3>
-                    <p class="feature-description">管理 RSA、ED25519、ECDSA 密钥，支持生成、导入、编辑、指纹显示和会话绑定。</p>
-                </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                        </svg>
-                    </div>
-                    <h3 class="feature-title">安全锁与加密存储</h3>
-                    <p class="feature-description">桌面端支持会话锁定和凭据加密存储；Android 端支持 PIN 和系统生物识别锁定。</p>
-                </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path d="M4 4v16h16"/>
-                            <path d="M7 15l4-4 3 3 5-7"/>
-                        </svg>
-                    </div>
-                    <h3 class="feature-title">服务器监控与统计</h3>
-                    <p class="feature-description">查看 CPU、内存、磁盘、网络状态，并记录连接时长、流量、命令频率和服务器费用信息。</p>
-                </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path d="M4 7h16M4 12h16M4 17h16"/>
-                            <circle cx="8" cy="7" r="2"/>
-                            <circle cx="16" cy="12" r="2"/>
-                            <circle cx="10" cy="17" r="2"/>
-                        </svg>
-                    </div>
-                    <h3 class="feature-title">端口转发、跳板与代理</h3>
-                    <p class="feature-description">支持本地、远程和动态端口转发，支持跳板机和代理配置，方便访问内网服务。</p>
-                </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path d="M4 4h16v16H4z"/>
-                            <path d="M8 4v16M16 4v16M4 12h16"/>
-                        </svg>
-                    </div>
-                    <h3 class="feature-title">RDP / VNC 会话</h3>
-                    <p class="feature-description">桌面端除 SSH 外，也可管理 RDP 和 VNC 会话，适合把远程连接统一整理到一个入口。</p>
-                </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                            <polyline points="14 2 14 8 20 8"/>
-                        </svg>
-                    </div>
-                    <h3 class="feature-title">备份、恢复与远程同步</h3>
-                    <p class="feature-description">支持普通 JSON、加密 .mshell 备份、加密同步 JSON，并可通过 GitHub Gist 或 GitLab Snippet 同步。</p>
-                </div>
-
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
-                        </svg>
-                    </div>
-                    <h3 class="feature-title">AI 助手与审计日志</h3>
-                    <p class="feature-description">桌面端提供终端 AI 助手、命令解释、操作日志和审计能力，便于排查问题和复盘操作。</p>
+                <div class="client-grid">
+                    <article class="client-card">
+                        <span>Windows Desktop</span>
+                        <h3>完整管理中心</h3>
+                        <p>适合日常长时间使用，覆盖 SSH、SFTP、密钥、片段、脚本、监控、同步备份和外观设置。</p>
+                        <ul>
+                            <li>多标签与分屏终端</li>
+                            <li>SFTP 文件传输与在线编辑</li>
+                            <li>命令片段、懒人脚本、AI 辅助</li>
+                            <li>审计日志、系统日志、会话锁定</li>
+                        </ul>
+                    </article>
+                    <article class="client-card">
+                        <span>Android Mobile</span>
+                        <h3>手机端应急维护</h3>
+                        <p>适合外出或临时处理问题，读取同步后的会话、分类、片段和密钥，并支持安全锁保护。</p>
+                        <ul>
+                            <li>SSH 会话新增、编辑、连接</li>
+                            <li>命令片段分类、复制和执行</li>
+                            <li>SSH 密钥导入和管理</li>
+                            <li>远程同步、PIN 和生物识别</li>
+                        </ul>
+                    </article>
                 </div>
             </div>
-        </div>
-    </section>
+        </section>
 
-    <section id="screenshots" class="screenshots">
-        <div class="container">
-            <div class="section-header">
-                <h2 class="section-title">产品截图</h2>
-                <p class="section-subtitle">从会话列表到文件管理、分屏和命令片段，直观看见 MShell 的工作方式</p>
+        <section id="screenshots" class="section screenshots">
+            <div class="container">
+                <div class="section-heading">
+                    <p class="section-kicker">Screenshots</p>
+                    <h2>产品截图</h2>
+                    <p>以下截图来自当前桌面端主要工作流，点击可放大查看。</p>
+                </div>
+                <div class="screenshot-grid">
+                    <figure class="screenshot-card">
+                        <img src="screenshots/main.png" alt="MShell 首页和会话列表" loading="lazy">
+                        <figcaption>首页与会话管理</figcaption>
+                    </figure>
+                    <figure class="screenshot-card">
+                        <img src="screenshots/terminal.png" alt="SSH 终端连接界面" loading="lazy">
+                        <figcaption>SSH 终端连接</figcaption>
+                    </figure>
+                    <figure class="screenshot-card">
+                        <img src="screenshots/sftp.png" alt="SFTP 文件传输助手" loading="lazy">
+                        <figcaption>SFTP 文件传输</figcaption>
+                    </figure>
+                    <figure class="screenshot-card">
+                        <img src="screenshots/snippets.png" alt="命令片段管理" loading="lazy">
+                        <figcaption>命令片段</figcaption>
+                    </figure>
+                    <figure class="screenshot-card">
+                        <img src="screenshots/autocomplete.png" alt="历史命令和智能补全" loading="lazy">
+                        <figcaption>历史命令与补全</figcaption>
+                    </figure>
+                    <figure class="screenshot-card">
+                        <img src="screenshots/monitor.png" alt="系统监控面板" loading="lazy">
+                        <figcaption>系统监控</figcaption>
+                    </figure>
+                    <figure class="screenshot-card">
+                        <img src="screenshots/split-vertical.png" alt="垂直分屏终端" loading="lazy">
+                        <figcaption>垂直分屏</figcaption>
+                    </figure>
+                    <figure class="screenshot-card">
+                        <img src="screenshots/split-quad.png" alt="四宫格分屏终端" loading="lazy">
+                        <figcaption>四宫格分屏</figcaption>
+                    </figure>
+                </div>
             </div>
-            <div class="screenshots-grid">
-                <div class="screenshot-item">
-                    <img src="screenshots/main.png" alt="软件首页" loading="lazy">
-                    <div class="screenshot-caption">软件首页 - 会话与服务器信息集中管理</div>
-                </div>
-                <div class="screenshot-item">
-                    <img src="screenshots/terminal.png" alt="终端连接界面" loading="lazy">
-                    <div class="screenshot-caption">终端连接 - 顶部状态、主机地址和工具入口</div>
-                </div>
-                <div class="screenshot-item">
-                    <img src="screenshots/sftp.png" alt="SFTP文件传输" loading="lazy">
-                    <div class="screenshot-caption">SFTP 文件管理 - 传输、编辑、权限设置</div>
-                </div>
-                <div class="screenshot-item">
-                    <img src="screenshots/monitor.png" alt="系统监控" loading="lazy">
-                    <div class="screenshot-caption">服务器监控 - 实时查看资源状态</div>
-                </div>
-                <div class="screenshot-item">
-                    <img src="screenshots/autocomplete.png" alt="智能补全" loading="lazy">
-                    <div class="screenshot-caption">智能补全 - 历史命令与上下文建议</div>
-                </div>
-                <div class="screenshot-item">
-                    <img src="screenshots/snippets.png" alt="命令片段" loading="lazy">
-                    <div class="screenshot-caption">命令片段 - 分类、变量和快捷执行</div>
-                </div>
-                <div class="screenshot-item">
-                    <img src="screenshots/split-vertical.png" alt="垂直分屏" loading="lazy">
-                    <div class="screenshot-caption">垂直分屏 - 同时维护多个终端</div>
-                </div>
-                <div class="screenshot-item">
-                    <img src="screenshots/split-quad.png" alt="四宫格分屏" loading="lazy">
-                    <div class="screenshot-caption">四宫格分屏 - 多主机并行操作</div>
-                </div>
-            </div>
-        </div>
-    </section>
+        </section>
 
-    <section id="download" class="download">
-        <div class="container">
-            <div class="download-content">
-                <h2 class="download-title">立即下载 MShell</h2>
-                <p class="download-subtitle">桌面端负责完整管理，Android 端负责移动连接和应急处理</p>
+        <section id="download" class="download section-band">
+            <div class="container download-grid">
+                <div class="download-copy">
+                    <p class="section-kicker">Download</p>
+                    <h2>下载 MShell v0.2.8</h2>
+                    <p>建议先在桌面端建立完整会话、密钥、片段和同步配置，再通过加密备份或远程同步带到 Android 端。</p>
+                    <div class="download-actions">
+                        <a class="btn btn-primary" href="https://github.com/inspoaibox/Mshell/releases" target="_blank">前往 GitHub Releases</a>
+                        <a class="btn btn-ghost" href="#quickstart">查看快速开始</a>
+                    </div>
+                </div>
                 <div class="download-cards">
-                    <div class="download-card featured">
-                        <div class="download-icon">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                <rect x="3" y="4" width="18" height="13" rx="2"/>
-                                <path d="M8 21h8M12 17v4"/>
-                            </svg>
-                        </div>
-                        <h3>Windows 桌面端</h3>
-                        <p class="version">v0.2.6</p>
-                        <p class="size">约 120 MB · Windows 10+</p>
-                        <a href="https://github.com/inspoaibox/Mshell/releases" class="btn btn-primary" target="_blank">
-                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-                            </svg>
-                            下载桌面安装包
-                        </a>
-                    </div>
-                    <div class="download-card">
-                        <div class="download-icon">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                <rect x="7" y="2" width="10" height="20" rx="2"/>
-                                <path d="M11 18h2"/>
-                            </svg>
-                        </div>
-                        <h3>Android 客户端</h3>
-                        <p class="version">v0.2.6</p>
-                        <p class="size">约 7 MB · Android 7.0+</p>
-                        <a href="https://github.com/inspoaibox/Mshell/releases" class="btn btn-primary" target="_blank">
-                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-                            </svg>
-                            查看 APK 发布
-                        </a>
-                    </div>
+                    <article class="download-card">
+                        <span>Windows</span>
+                        <h3>桌面端安装包</h3>
+                        <p>Windows 10 / 11，适合完整服务器管理和日常维护。</p>
+                        <strong>v0.2.8</strong>
+                    </article>
+                    <article class="download-card">
+                        <span>Android</span>
+                        <h3>移动端 APK</h3>
+                        <p>Android 7.0+，适合移动连接、应急处理和同步数据查看。</p>
+                        <strong>v0.2.8</strong>
+                    </article>
                 </div>
-                <div class="system-requirements">
-                    <h4>系统要求与说明</h4>
-                    <ul>
-                        <li>Windows 桌面端：Windows 10 或更高版本，建议 4GB RAM 以上</li>
-                        <li>Android 客户端：Android 7.0 或更高版本，支持本地数据和远程同步配置</li>
-                        <li>网络：SSH、SFTP、远程同步和更新检查需要可访问对应服务器或 Git 服务</li>
-                        <li>安全：加密备份和同步请妥善保存密码，密码丢失后无法解密备份数据</li>
-                    </ul>
+            </div>
+        </section>
+
+        <section id="quickstart" class="section quickstart">
+            <div class="container">
+                <div class="section-heading">
+                    <p class="section-kicker">Quick Start</p>
+                    <h2>快速开始</h2>
                 </div>
+                <div class="quickstart-grid">
+                    <article>
+                        <span>1</span>
+                        <h3>创建 SSH 会话</h3>
+                        <p>填写主机、端口、账号和认证方式。密码登录与密钥登录按选择独立使用，避免凭据混用。</p>
+                    </article>
+                    <article>
+                        <span>2</span>
+                        <h3>整理命令和脚本</h3>
+                        <p>把常用命令放入命令片段，把复杂维护操作沉淀为懒人脚本，运行前确认目标终端。</p>
+                    </article>
+                    <article>
+                        <span>3</span>
+                        <h3>配置同步备份</h3>
+                        <p>导出加密备份或配置 GitHub/GitLab 远程同步，妥善保存同步密码和 Token。</p>
+                    </article>
+                    <article>
+                        <span>4</span>
+                        <h3>接入 Android</h3>
+                        <p>在手机端导入或下载同步数据，开启 PIN 或生物识别锁，处理移动场景下的临时维护。</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container footer-grid">
+            <div>
+                <div class="footer-brand">
+                    <img src="logo.png" alt="MShell Logo">
+                    <strong>MShell</strong>
+                </div>
+                <p>一款围绕 SSH 服务器维护场景设计的跨端管理工作台。</p>
+            </div>
+            <div>
+                <h3>项目</h3>
+                <a href="https://github.com/inspoaibox/Mshell" target="_blank">GitHub 仓库</a>
+                <a href="https://github.com/inspoaibox/Mshell/releases" target="_blank">下载中心</a>
+                <a href="#screenshots">产品截图</a>
+            </div>
+            <div>
+                <h3>使用许可</h3>
+                <p>支持个人与企业内部使用；商业售卖、SaaS 化分发或二次商业发行请先获得授权。</p>
             </div>
         </div>
-    </section>
-
-    <section id="docs" class="docs">
-        <div class="container">
-            <div class="section-header">
-                <h2 class="section-title">快速开始</h2>
-                <p class="section-subtitle">先在桌面端建立完整数据，再通过备份或远程同步带到 Android 端</p>
-            </div>
-            <div class="docs-grid">
-                <div class="doc-card">
-                    <div class="doc-number">01</div>
-                    <h3>安装桌面端</h3>
-                    <p>下载 Windows 安装包，创建 SSH 会话、导入密钥，并设置服务商、地区、到期时间等服务器信息。</p>
-                </div>
-                <div class="doc-card">
-                    <div class="doc-number">02</div>
-                    <h3>整理常用数据</h3>
-                    <p>建立会话分组、命令片段分类、SSH 密钥和快捷命令，让日常维护操作可以被复用。</p>
-                </div>
-                <div class="doc-card">
-                    <div class="doc-number">03</div>
-                    <h3>配置同步备份</h3>
-                    <p>使用加密备份或 GitHub/GitLab 远程同步，保存同步 URL、Token 和同步加密密码。</p>
-                </div>
-                <div class="doc-card">
-                    <div class="doc-number">04</div>
-                    <h3>接入 Android</h3>
-                    <p>在手机端导入或下载同步数据，启用 PIN/生物识别锁定，即可移动连接服务器并调用片段。</p>
-                </div>
-            </div>
-            <div class="docs-links">
-                <a href="https://github.com/inspoaibox/Mshell/releases" class="btn btn-outline" target="_blank">下载中心</a>
-                <a href="https://github.com/inspoaibox/Mshell/issues" class="btn btn-outline" target="_blank">问题反馈</a>
-            </div>
-        </div>
-    </section>
-
-    <footer class="footer">
-        <div class="container">
-            <div class="footer-content">
-                <div class="footer-section">
-                    <h4>关于 MShell</h4>
-                    <p>MShell 是一款面向开发者、站长和运维人员的跨端 SSH 终端与服务器管理工具，目标是把连接、命令、文件、密钥和同步备份整理到一个顺手的工作台里。</p>
-                </div>
-                <div class="footer-section">
-                    <h4>产品</h4>
-                    <ul>
-                        <li><a href="#features">功能特性</a></li>
-                        <li><a href="#clients">客户端</a></li>
-                        <li><a href="#screenshots">产品截图</a></li>
-                        <li><a href="#download">下载</a></li>
-                    </ul>
-                </div>
-                <div class="footer-section">
-                    <h4>资源</h4>
-                    <ul>
-                        <li><a href="https://github.com/inspoaibox/Mshell/releases" target="_blank">下载中心</a></li>
-                        <li><a href="https://github.com/inspoaibox/Mshell/releases" target="_blank">更新日志</a></li>
-                        <li><a href="https://github.com/inspoaibox/Mshell/issues" target="_blank">问题反馈</a></li>
-                    </ul>
-                </div>
-                <div class="footer-section">
-                    <h4>安全建议</h4>
-                    <ul>
-                        <li>开启会话锁或移动端 PIN/生物识别锁</li>
-                        <li>同步 Token 使用最小权限</li>
-                        <li>妥善保存加密备份密码</li>
-                    </ul>
-                </div>
-            </div>
-            <div class="footer-bottom">
-                <p>&copy; 2026 MShell Team. All rights reserved.</p>
-            </div>
+        <div class="container footer-bottom">
+            <span>Copyright 2026 MShell Team</span>
+            <span>Version v0.2.8</span>
         </div>
     </footer>
+
+    <dialog class="image-dialog" aria-label="截图预览">
+        <button type="button" class="dialog-close" aria-label="关闭预览">关闭</button>
+        <img alt="">
+        <p></p>
+    </dialog>
 
     <script src="script.js"></script>
 </body>
