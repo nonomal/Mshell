@@ -42,6 +42,8 @@ export interface LazyScript {
 const VARIABLE_NAME_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/
 const CHANGE_SSH_PORT_SCRIPT_DESCRIPTION =
   '修改 sshd 监听端口，并自动检测本机防火墙与 SELinux 放行。'
+const REPLACE_SSH_PUBLIC_KEY_SCRIPT_DESCRIPTION =
+  '为指定用户替换 authorized_keys 中的 SSH 公钥，自动备份并修正权限。'
 const DISABLE_SSH_PASSWORD_SCRIPT_DESCRIPTION =
   '禁用 SSH 密码与交互式密码认证，仅允许已配置公钥的用户使用密钥登录。'
 const ENABLE_SSH_PASSWORD_SCRIPT_DESCRIPTION =
@@ -2717,6 +2719,217 @@ echo "公钥已添加到 $TARGET_USER"`,
     runMode: 'paste'
   },
   {
+    name: '替换 SSH 公钥',
+    fileName: 'replace-ssh-public-key.sh',
+    description: REPLACE_SSH_PUBLIC_KEY_SCRIPT_DESCRIPTION,
+    category: 'SSH 加固',
+    tags: ['ssh', 'key', 'authorized_keys'],
+    type: 'shell',
+    content: `set -e
+TARGET_USER="{{username}}"
+DELETE_KEY_INDEX="{{delete_key_index}}"
+OLD_PUBLIC_KEY="$(cat <<'MSHELL_OLD_PUBLIC_KEY'
+{{old_public_key}}
+MSHELL_OLD_PUBLIC_KEY
+)"
+NEW_PUBLIC_KEY="$(cat <<'MSHELL_NEW_PUBLIC_KEY'
+{{public_key}}
+MSHELL_NEW_PUBLIC_KEY
+)"
+
+normalize_key_id() {
+  printf '%s\\n' "$1" | awk '
+    {
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ /^(ssh-rsa|ssh-ed25519|ecdsa-sha2-[^[:space:]]+|sk-ssh-[^[:space:]]+|sk-ecdsa-[^[:space:]]+)$/ && i < NF) {
+          print $i " " $(i + 1)
+          exit
+        }
+      }
+    }
+  '
+}
+
+print_key_list() {
+  awk '
+    function key_comment(start,    i, value) {
+      value = ""
+      for (i = start; i <= NF; i++) {
+        value = value (value ? " " : "") $i
+      }
+      return value
+    }
+    {
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ /^(ssh-rsa|ssh-ed25519|ecdsa-sha2-[^[:space:]]+|sk-ssh-[^[:space:]]+|sk-ecdsa-[^[:space:]]+)$/ && i < NF) {
+          key_count += 1
+          comment = key_comment(i + 2)
+          if (comment == "") comment = "(无备注)"
+          printf "%d) %s %s\\n   备注: %s\\n", key_count, $i, $(i + 1), comment
+          break
+        }
+      }
+    }
+    END {
+      if (key_count == 0) print "(未检测到有效 SSH 公钥)"
+    }
+  ' "$AUTHORIZED_KEYS"
+}
+
+key_id_by_index() {
+  awk -v selected="$1" '
+    {
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ /^(ssh-rsa|ssh-ed25519|ecdsa-sha2-[^[:space:]]+|sk-ssh-[^[:space:]]+|sk-ecdsa-[^[:space:]]+)$/ && i < NF) {
+          key_count += 1
+          if (key_count == selected) {
+            print $i " " $(i + 1)
+            found = 1
+            exit
+          }
+        }
+      }
+    }
+    END { exit(found ? 0 : 1) }
+  ' "$AUTHORIZED_KEYS"
+}
+
+key_exists() {
+  awk -v target="$1" '
+    function line_key_id(    i) {
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ /^(ssh-rsa|ssh-ed25519|ecdsa-sha2-[^[:space:]]+|sk-ssh-[^[:space:]]+|sk-ecdsa-[^[:space:]]+)$/ && i < NF) {
+          return $i " " $(i + 1)
+        }
+      }
+      return ""
+    }
+    line_key_id() == target { found = 1 }
+    END { exit(found ? 0 : 1) }
+  ' "$AUTHORIZED_KEYS"
+}
+
+remove_key() {
+  TMP_FILE="$(mktemp)"
+  if awk -v target="$1" '
+    function line_key_id(    i) {
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ /^(ssh-rsa|ssh-ed25519|ecdsa-sha2-[^[:space:]]+|sk-ssh-[^[:space:]]+|sk-ecdsa-[^[:space:]]+)$/ && i < NF) {
+          return $i " " $(i + 1)
+        }
+      }
+      return ""
+    }
+    line_key_id() == target { removed = 1; next }
+    { print }
+    END { exit(removed ? 0 : 2) }
+  ' "$AUTHORIZED_KEYS" > "$TMP_FILE"; then
+    mv "$TMP_FILE" "$AUTHORIZED_KEYS"
+    return 0
+  else
+    STATUS="$?"
+    rm -f "$TMP_FILE"
+    return "$STATUS"
+  fi
+}
+
+NEW_KEY_ID="$(normalize_key_id "$NEW_PUBLIC_KEY")"
+if [ -z "$NEW_KEY_ID" ]; then
+  echo "新公钥格式不正确，请填写 ssh-rsa、ssh-ed25519、ecdsa-sha2-* 或安全密钥公钥。"
+  exit 1
+fi
+
+OLD_KEY_ID=""
+if [ -n "$(printf '%s' "$OLD_PUBLIC_KEY" | tr -d '[:space:]')" ]; then
+  OLD_KEY_ID="$(normalize_key_id "$OLD_PUBLIC_KEY")"
+  if [ -z "$OLD_KEY_ID" ]; then
+    echo "旧公钥格式不正确，已停止操作。"
+    exit 1
+  fi
+fi
+
+DELETE_KEY_INDEX="$(printf '%s' "$DELETE_KEY_INDEX" | tr -d '[:space:]')"
+if [ -z "$DELETE_KEY_INDEX" ]; then
+  DELETE_KEY_INDEX="0"
+fi
+if ! printf '%s' "$DELETE_KEY_INDEX" | grep -Eq '^[0-9]+$'; then
+  echo "删除序号必须是数字。填写 0 表示只新增，不删除旧公钥。"
+  exit 1
+fi
+
+USER_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+if [ -z "$USER_HOME" ]; then
+  echo "用户不存在: $TARGET_USER"
+  exit 1
+fi
+
+USER_GROUP="$(id -gn "$TARGET_USER")"
+AUTHORIZED_KEYS="$USER_HOME/.ssh/authorized_keys"
+
+install -d -m 700 -o "$TARGET_USER" -g "$USER_GROUP" "$USER_HOME/.ssh"
+touch "$AUTHORIZED_KEYS"
+chown "$TARGET_USER:$USER_GROUP" "$AUTHORIZED_KEYS"
+chmod 600 "$AUTHORIZED_KEYS"
+
+BACKUP_FILE="$AUTHORIZED_KEYS.bak.$(date +%Y%m%d%H%M%S)"
+cp "$AUTHORIZED_KEYS" "$BACKUP_FILE"
+
+echo "当前 $TARGET_USER 的 authorized_keys 有效公钥列表："
+print_key_list
+echo
+
+if key_exists "$NEW_KEY_ID"; then
+  echo "新公钥已存在，跳过重复写入。"
+else
+  printf '%s\\n' "$NEW_PUBLIC_KEY" >> "$AUTHORIZED_KEYS"
+  echo "新公钥已写入。"
+fi
+
+DELETE_KEY_ID="$OLD_KEY_ID"
+if [ -z "$DELETE_KEY_ID" ] && [ "$DELETE_KEY_INDEX" -gt 0 ]; then
+  DELETE_KEY_ID="$(key_id_by_index "$DELETE_KEY_INDEX" || true)"
+  if [ -z "$DELETE_KEY_ID" ]; then
+    echo "未找到序号 $DELETE_KEY_INDEX 对应的公钥，已停止操作。"
+    echo "备份文件: $BACKUP_FILE"
+    exit 1
+  fi
+fi
+
+if [ -n "$DELETE_KEY_ID" ]; then
+  if [ "$DELETE_KEY_ID" = "$NEW_KEY_ID" ]; then
+    echo "选择删除的公钥和新公钥相同，未删除任何公钥。"
+  elif remove_key "$DELETE_KEY_ID"; then
+    echo "旧公钥已从 authorized_keys 移除。"
+  else
+    STATUS="$?"
+    if [ "$STATUS" -eq 2 ]; then
+      echo "未在 authorized_keys 中找到旧公钥，已保留现有内容。"
+    else
+      echo "删除旧公钥失败，备份文件: $BACKUP_FILE"
+      exit 1
+    fi
+  fi
+else
+  echo "未选择要删除的旧公钥。本次仅确保新公钥存在，不删除旧公钥。"
+fi
+
+chown "$TARGET_USER:$USER_GROUP" "$AUTHORIZED_KEYS"
+chmod 600 "$AUTHORIZED_KEYS"
+
+echo "操作完成。备份文件: $BACKUP_FILE"
+echo "变更后的有效公钥列表："
+print_key_list
+echo "请先确认新密钥可以登录，再关闭当前 SSH 连接。"`,
+    variables: [
+      { name: 'username', label: '用户名', type: 'text', defaultValue: 'root', required: true },
+      { name: 'delete_key_index', label: '删除序号（0 只新增）', type: 'number', defaultValue: '0' },
+      { name: 'old_public_key', label: '旧公钥内容', type: 'textarea', defaultValue: '' },
+      { name: 'public_key', label: '新公钥内容', type: 'textarea', required: true }
+    ],
+    riskLevel: 'high',
+    runMode: 'paste'
+  },
+  {
     name: '关闭 SSH 密码登录',
     fileName: 'disable-ssh-password-login.sh',
     description: DISABLE_SSH_PASSWORD_SCRIPT_DESCRIPTION,
@@ -3176,6 +3389,29 @@ export class LazyScriptManager extends BaseManager<LazyScript> {
         variables: AUTO_CHANGE_MIRROR_SCRIPT_VARIABLES
       })
     }
+
+    const replaceSshPublicKeyScript = this.getAll().find(
+      (script) =>
+        script.fileName === 'replace-ssh-public-key.sh' || script.name === '替换 SSH 公钥'
+    )
+    const replaceSshPublicKeyTemplate = DEFAULT_LAZY_SCRIPTS.find(
+      (script) => script.fileName === 'replace-ssh-public-key.sh'
+    )
+
+    if (
+      replaceSshPublicKeyScript &&
+      replaceSshPublicKeyTemplate &&
+      this.shouldMigrateReplaceSshPublicKeyScript(replaceSshPublicKeyScript)
+    ) {
+      await this.update(replaceSshPublicKeyScript.id, {
+        description: replaceSshPublicKeyTemplate.description,
+        tags: replaceSshPublicKeyTemplate.tags,
+        content: replaceSshPublicKeyTemplate.content,
+        variables: replaceSshPublicKeyTemplate.variables,
+        riskLevel: replaceSshPublicKeyTemplate.riskLevel,
+        runMode: replaceSshPublicKeyTemplate.runMode
+      })
+    }
   }
 
   private async deleteLegacyDefaultScripts(): Promise<void> {
@@ -3249,6 +3485,17 @@ export class LazyScriptManager extends BaseManager<LazyScript> {
       !hasSshPortVariable ||
       (normalized.includes('已开启 SSH 密码登录，并保留密钥登录。') &&
         !normalized.includes('NEW_PORT="{{ssh_port}}"'))
+    )
+  }
+
+  private shouldMigrateReplaceSshPublicKeyScript(script: LazyScript): boolean {
+    const normalized = script.content.replace(/\r\n/g, '\n')
+    return (
+      !script.variables.some((variable) => variable.name === 'delete_key_index') ||
+      !normalized.includes('DELETE_KEY_INDEX="{{delete_key_index}}"') ||
+      !normalized.includes('print_key_list()') ||
+      !normalized.includes('key_id_by_index()') ||
+      normalized.includes('index += 1')
     )
   }
 

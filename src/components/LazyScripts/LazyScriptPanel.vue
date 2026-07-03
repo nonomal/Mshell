@@ -224,6 +224,21 @@
               </button>
             </div>
           </div>
+          <div v-if="showReplaceSshKeyHelper" class="authorized-key-helper">
+            <div class="authorized-key-helper-main">
+              <span>旧公钥选择</span>
+              <small>
+                {{ selectedAuthorizedKeySummary }}
+              </small>
+            </div>
+            <el-button
+              :icon="Refresh"
+              :loading="authorizedKeysLoading"
+              @click="loadRemoteAuthorizedKeys"
+            >
+              读取远程公钥列表
+            </el-button>
+          </div>
           <div class="variable-grid">
             <div
               v-for="variable in selectedScript.variables"
@@ -581,6 +596,56 @@
     </el-dialog>
 
     <el-dialog
+      v-model="showAuthorizedKeyDialog"
+      title="选择要替换的旧公钥"
+      width="840px"
+      class="lazy-script-authorized-key-dialog"
+    >
+      <div class="authorized-key-dialog">
+        <p>
+          从远程用户 <strong>{{ stringifyExecutionValue(executionValues.username) || 'root' }}</strong>
+          的 <code>authorized_keys</code> 中选择要删除的旧公钥。选择“只新增”会保留所有旧公钥。
+        </p>
+
+        <el-radio-group v-model="selectedAuthorizedKeyIndex" class="authorized-key-radio-list">
+          <el-radio border label="0" class="authorized-key-radio">
+            <div class="authorized-key-option">
+              <strong>只新增新公钥</strong>
+              <small>不删除任何已有公钥，旧公钥仍然可以继续登录。</small>
+            </div>
+          </el-radio>
+
+          <el-radio
+            v-for="entry in remoteAuthorizedKeys"
+            :key="entry.index"
+            border
+            :label="String(entry.index)"
+            class="authorized-key-radio"
+          >
+            <div class="authorized-key-option">
+              <strong>#{{ entry.index }} · {{ entry.type }}</strong>
+              <code>{{ entry.keyPreview }}</code>
+              <small>{{ entry.comment || '无备注' }}</small>
+            </div>
+          </el-radio>
+        </el-radio-group>
+
+        <el-empty
+          v-if="!remoteAuthorizedKeys.length"
+          description="该用户 authorized_keys 中暂未检测到有效 SSH 公钥"
+          :image-size="88"
+        />
+      </div>
+
+      <template #footer>
+        <el-button @click="showAuthorizedKeyDialog = false">取消</el-button>
+        <el-button type="primary" @click="applySelectedAuthorizedKey">
+          应用选择
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="showUsageGuide"
       title="懒人脚本使用详情"
       width="820px"
@@ -851,6 +916,15 @@ interface FirewallPortPreset {
   protocol: string[]
 }
 
+interface AuthorizedKeyEntry {
+  index: number
+  type: string
+  key: string
+  keyPreview: string
+  comment: string
+  line: string
+}
+
 interface SSHKey {
   id: string
   name: string
@@ -881,8 +955,12 @@ const sshKeysLoading = ref(false)
 const selectedSshKeyId = ref('')
 const showGenerateKeyDialog = ref(false)
 const showManualKeyDialog = ref(false)
+const showAuthorizedKeyDialog = ref(false)
 const generatingKey = ref(false)
 const addingKey = ref(false)
+const authorizedKeysLoading = ref(false)
+const remoteAuthorizedKeys = ref<AuthorizedKeyEntry[]>([])
+const selectedAuthorizedKeyIndex = ref('0')
 const executionValues = reactive<Record<string, ExecutionValue>>({})
 const numberExecutionValues = reactive<Record<string, number | undefined>>({})
 
@@ -915,7 +993,7 @@ const manualKeyForm = reactive({
   comment: ''
 })
 
-type TargetTerminalIntent = 'deploy' | 'run' | 'send-command'
+type TargetTerminalIntent = 'deploy' | 'run' | 'send-command' | 'read-authorized-keys'
 
 const selectedTargetTerminalId = ref('')
 const targetTerminalIntent = ref<TargetTerminalIntent>('run')
@@ -936,7 +1014,8 @@ const targetTerminalActionText = computed(() => {
   const labels: Record<TargetTerminalIntent, string> = {
     deploy: '部署到终端',
     run: '运行脚本',
-    'send-command': '发送命令'
+    'send-command': '发送命令',
+    'read-authorized-keys': '读取公钥列表'
   }
   return labels[targetTerminalIntent.value]
 })
@@ -958,6 +1037,37 @@ const showSshKeyHelper = computed(() => Boolean(publicKeyVariable.value))
 const selectedSshKey = computed(
   () => sshKeys.value.find((key) => key.id === selectedSshKeyId.value) || null
 )
+const isReplaceSshPublicKeyScript = computed(() => {
+  const script = selectedScript.value
+  if (!script) return false
+  return (
+    normalizeScriptFileName(script.fileName) === 'replace-ssh-public-key.sh' ||
+    script.name === '替换 SSH 公钥'
+  )
+})
+const showReplaceSshKeyHelper = computed(() => isReplaceSshPublicKeyScript.value)
+const selectedAuthorizedKeyEntry = computed(() =>
+  remoteAuthorizedKeys.value.find((entry) => String(entry.index) === selectedAuthorizedKeyIndex.value) || null
+)
+const selectedAuthorizedKeySummary = computed(() => {
+  const oldPublicKey = stringifyExecutionValue(executionValues.old_public_key).trim()
+  if (oldPublicKey) {
+    const matched = remoteAuthorizedKeys.value.find((entry) => entry.line.trim() === oldPublicKey)
+    return matched
+      ? `将删除 #${matched.index} ${matched.type} ${matched.comment || '无备注'}`
+      : '已填写旧公钥，将按公钥内容精确删除'
+  }
+
+  const index = Number(stringifyExecutionValue(executionValues.delete_key_index) || '0')
+  if (Number.isInteger(index) && index > 0) {
+    const matched = remoteAuthorizedKeys.value.find((entry) => entry.index === index)
+    return matched
+      ? `将删除 #${matched.index} ${matched.type} ${matched.comment || '无备注'}`
+      : `将按序号 ${index} 删除远程公钥`
+  }
+
+  return '当前为只新增模式，不会删除已有公钥'
+})
 const availableKeyBits = computed(() =>
   generateKeyForm.type === 'ecdsa' ? [256, 384, 521] : [2048, 3072, 4096]
 )
@@ -1073,6 +1183,9 @@ const renderedContent = computed(() => {
 watch(selectedScript, (script) => {
   resetExecutionValues(script)
   selectedSshKeyId.value = ''
+  remoteAuthorizedKeys.value = []
+  selectedAuthorizedKeyIndex.value = '0'
+  showAuthorizedKeyDialog.value = false
   if (!showFirewallPortGuideButton.value) {
     showFirewallPortGuide.value = false
   }
@@ -1157,6 +1270,157 @@ const applyFirewallPortPreset = (preset: FirewallPortPreset) => {
   executionValues.ports = preset.ports
   executionValues.protocol = [...preset.protocol]
   ElMessage.success('已填入常用端口，来源 IP/IP 段请按实际情况确认')
+}
+
+const loadRemoteAuthorizedKeys = async () => {
+  if (!isReplaceSshPublicKeyScript.value || authorizedKeysLoading.value) return
+  if (!validateTerminalReady()) return
+
+  const username = stringifyExecutionValue(executionValues.username).trim() || 'root'
+  const targetTerminalId = await requestTargetTerminal('read-authorized-keys')
+  if (!targetTerminalId) return
+
+  authorizedKeysLoading.value = true
+  try {
+    const result = await window.electronAPI.ssh.executeCommand(
+      targetTerminalId,
+      buildListAuthorizedKeysCommand(username),
+      15000
+    )
+
+    if (!result.success) {
+      ElMessage.error(result.error || '读取远程公钥列表失败')
+      return
+    }
+
+    const output = result.data || ''
+    const remoteError = parseRemoteAuthorizedKeysError(output)
+    if (remoteError) {
+      ElMessage.error(remoteError)
+      return
+    }
+
+    remoteAuthorizedKeys.value = parseRemoteAuthorizedKeys(output)
+    selectedAuthorizedKeyIndex.value = getCurrentDeleteKeyIndex()
+    if (
+      selectedAuthorizedKeyIndex.value !== '0' &&
+      !remoteAuthorizedKeys.value.some((entry) => String(entry.index) === selectedAuthorizedKeyIndex.value)
+    ) {
+      selectedAuthorizedKeyIndex.value = '0'
+    }
+
+    showAuthorizedKeyDialog.value = true
+    if (!remoteAuthorizedKeys.value.length) {
+      ElMessage.warning('该用户 authorized_keys 中暂未检测到有效 SSH 公钥')
+    }
+  } catch (error: any) {
+    ElMessage.error('读取远程公钥列表失败: ' + error.message)
+  } finally {
+    authorizedKeysLoading.value = false
+  }
+}
+
+const buildListAuthorizedKeysCommand = (username: string) =>
+  [
+    `TARGET_USER=${shellQuote(username)}`,
+    'USER_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"',
+    'if [ -z "$USER_HOME" ]; then printf "__MSHELL_ERROR__\\t用户不存在: %s\\n" "$TARGET_USER"; exit 0; fi',
+    'AUTHORIZED_KEYS="$USER_HOME/.ssh/authorized_keys"',
+    'if [ ! -f "$AUTHORIZED_KEYS" ]; then printf "__MSHELL_EMPTY__\\n"; exit 0; fi',
+    `awk '
+      function key_comment(start,    i, value) {
+        value = ""
+        for (i = start; i <= NF; i++) {
+          value = value (value ? " " : "") $i
+        }
+        return value
+      }
+      {
+        for (i = 1; i <= NF; i++) {
+          if ($i ~ /^(ssh-rsa|ssh-ed25519|ecdsa-sha2-[^[:space:]]+|sk-ssh-[^[:space:]]+|sk-ecdsa-[^[:space:]]+)$/ && i < NF) {
+            key_count += 1
+            comment = key_comment(i + 2)
+            gsub(/\\t/, " ", comment)
+            line = $0
+            gsub(/\\t/, " ", line)
+            printf "__MSHELL_KEY__\\t%d\\t%s\\t%s\\t%s\\t%s\\n", key_count, $i, $(i + 1), comment, line
+            break
+          }
+        }
+      }
+    ' "$AUTHORIZED_KEYS"`
+  ].join('\n')
+
+const parseRemoteAuthorizedKeysError = (output: string) => {
+  const line = output
+    .split(/\r?\n/)
+    .find((item) => item.startsWith('__MSHELL_ERROR__\t'))
+  return line ? line.split('\t').slice(1).join('\t') || '读取远程公钥列表失败' : ''
+}
+
+const parseRemoteAuthorizedKeys = (output: string): AuthorizedKeyEntry[] =>
+  output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('__MSHELL_KEY__\t'))
+    .map((line) => {
+      const parts = line.split('\t')
+      const index = Number(parts[1])
+      const type = parts[2] || ''
+      const key = parts[3] || ''
+      const comment = parts[4] || ''
+      const fallbackLine = `${type} ${key}${comment ? ` ${comment}` : ''}`.trim()
+      return {
+        index,
+        type,
+        key,
+        keyPreview: formatPublicKeyPreview(key),
+        comment,
+        line: parts.slice(5).join('\t').trim() || fallbackLine
+      }
+    })
+    .filter((entry) => Number.isInteger(entry.index) && entry.index > 0 && entry.type && entry.key)
+
+const formatPublicKeyPreview = (value: string) =>
+  value.length > 36 ? `${value.slice(0, 18)}...${value.slice(-10)}` : value
+
+const getCurrentDeleteKeyIndex = () => {
+  const value =
+    numberExecutionValues.delete_key_index === undefined ||
+    numberExecutionValues.delete_key_index === null
+      ? executionValues.delete_key_index
+      : numberExecutionValues.delete_key_index
+  const index = Number(String(value || '0').trim())
+  return Number.isInteger(index) && index > 0 ? String(index) : '0'
+}
+
+const applySelectedAuthorizedKey = () => {
+  const index = Number(selectedAuthorizedKeyIndex.value || '0')
+  if (!Number.isInteger(index) || index < 0) {
+    ElMessage.warning('请选择有效的公钥序号')
+    return
+  }
+
+  if (index === 0) {
+    executionValues.old_public_key = ''
+    executionValues.delete_key_index = '0'
+    numberExecutionValues.delete_key_index = 0
+    showAuthorizedKeyDialog.value = false
+    ElMessage.success('已设置为只新增新公钥')
+    return
+  }
+
+  const entry = selectedAuthorizedKeyEntry.value
+  if (!entry) {
+    ElMessage.warning('请选择要删除的旧公钥')
+    return
+  }
+
+  executionValues.old_public_key = entry.line
+  executionValues.delete_key_index = String(entry.index)
+  numberExecutionValues.delete_key_index = entry.index
+  showAuthorizedKeyDialog.value = false
+  ElMessage.success(`已选择删除 #${entry.index} ${entry.type}`)
 }
 
 const loadSshKeys = async (showError: boolean | Event = true) => {
@@ -2473,6 +2737,114 @@ const toTerminalLineEndings = (value: string) =>
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.authorized-key-helper {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-primary) 72%, transparent);
+}
+
+.authorized-key-helper-main {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 260px;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.authorized-key-helper-main span {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.authorized-key-helper-main small {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.authorized-key-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.authorized-key-dialog p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.authorized-key-dialog code {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.authorized-key-radio-list {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  max-height: min(56vh, 520px);
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+}
+
+.authorized-key-radio {
+  width: 100%;
+  height: auto;
+  min-height: 58px;
+  margin: 0;
+  padding: 10px 12px;
+}
+
+.authorized-key-radio :deep(.el-radio__label) {
+  min-width: 0;
+  flex: 1;
+}
+
+.authorized-key-option {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.35;
+}
+
+.authorized-key-option strong,
+.authorized-key-option code,
+.authorized-key-option small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.authorized-key-option strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.authorized-key-option code {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.authorized-key-option small {
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 .variable-grid {
