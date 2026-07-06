@@ -19,6 +19,48 @@ type TransferBatchResult = DeleteBatchResult & {
   paused: string[]
 }
 
+type DockerContainerAction = 'start' | 'pause' | 'unpause' | 'restart' | 'stop' | 'remove'
+
+type DockerContainerActionOptions = {
+  removeImage?: boolean
+  removeNetworks?: boolean
+}
+
+type DockerEnvironment = {
+  installed: boolean
+  dockerVersion: string
+  composeInstalled: boolean
+  composeVersion: string
+  serviceStatus: string
+  socketAccessible: boolean
+  needsSudo: boolean
+  os: {
+    id: string
+    versionId: string
+    prettyName: string
+    packageManager: string
+  }
+}
+
+type DockerContainer = {
+  id: string
+  name: string
+  image: string
+  status: string
+  state: string
+  ports: string
+  createdAt: string
+  size: string
+  cpu: string
+  memory: string
+  netIO: string
+}
+
+type DockerOverview = {
+  environment: DockerEnvironment
+  containers: DockerContainer[]
+}
+
 type UploadTransferRequest = {
   localPath: string
   remotePath: string
@@ -69,20 +111,38 @@ export interface ElectronAPI {
     getSummary: () => Promise<ApiResult<any>>
     cleanup: () => Promise<ApiResult>
   }
+  docker: {
+    getOverview: (connectionId: string) => Promise<ApiResult<DockerOverview>>
+    install: (connectionId: string) => Promise<ApiResult<string>>
+    cleanupUnused: (connectionId: string) => Promise<ApiResult<string>>
+    containerAction: (
+      connectionId: string,
+      action: DockerContainerAction,
+      containerId: string,
+      options?: DockerContainerActionOptions
+    ) => Promise<ApiResult<string>>
+  }
   portForward: {
     getAll: (
-      connectionId: string
+      sessionId: string
     ) => Promise<{ success: boolean; forwards?: any[]; error?: string }>
     add: (
+      sessionId: string,
       connectionId: string,
       config: any
     ) => Promise<{ success: boolean; data?: any; error?: string }>
     start: (
+      sessionId: string,
       connectionId: string,
       forwardId: string
     ) => Promise<{ success: boolean; error?: string }>
-    stop: (connectionId: string, forwardId: string) => Promise<{ success: boolean; error?: string }>
+    stop: (
+      sessionId: string,
+      connectionId: string,
+      forwardId: string
+    ) => Promise<{ success: boolean; error?: string }>
     delete: (
+      sessionId: string,
       connectionId: string,
       forwardId: string
     ) => Promise<{ success: boolean; error?: string }>
@@ -92,6 +152,22 @@ export interface ElectronAPI {
     ) => Promise<{ success: boolean; data?: any; error?: string }>
     getAllTrafficStats: () => Promise<{ success: boolean; data?: any; error?: string }>
     resetTrafficStats: (forwardId: string) => Promise<{ success: boolean; error?: string }>
+    getSystemPersistencePlan: (
+      sessionId: string,
+      forwardId: string
+    ) => Promise<{ success: boolean; data?: any; error?: string }>
+    getSystemPersistenceStatus: (
+      sessionId: string,
+      forwardId: string
+    ) => Promise<{ success: boolean; data?: any; error?: string }>
+    installSystemPersistence: (
+      sessionId: string,
+      forwardId: string
+    ) => Promise<{ success: boolean; data?: any; error?: string }>
+    uninstallSystemPersistence: (
+      sessionId: string,
+      forwardId: string
+    ) => Promise<{ success: boolean; data?: any; error?: string }>
     createTemplate: (data: any) => Promise<{ success: boolean; data?: any; error?: string }>
     getAllTemplates: () => Promise<{ success: boolean; data?: any[]; error?: string }>
     getTemplate: (id: string) => Promise<{ success: boolean; data?: any; error?: string }>
@@ -101,13 +177,26 @@ export interface ElectronAPI {
     searchTemplates: (query: string) => Promise<{ success: boolean; data?: any[]; error?: string }>
     createFromTemplate: (
       templateId: string,
-      connectionId: string
+      sessionId: string
     ) => Promise<{ success: boolean; data?: any; error?: string }>
-    autoStart: (connectionId: string) => Promise<{ success: boolean; error?: string }>
+    autoStart: (
+      sessionId: string,
+      connectionId: string
+    ) => Promise<{ success: boolean; error?: string }>
   }
   commandHistory: {
     add: (entry: any) => Promise<ApiResult<any>>
     getAll: (limit?: number) => Promise<ApiResult<any[]>>
+    getPanelData: (
+      limit?: number,
+      mostUsedLimit?: number
+    ) => Promise<
+      ApiResult<{
+        history: any[]
+        statistics: any
+        mostUsedCommands: Array<{ command: string; count: number }>
+      }>
+    >
     getBySession: (sessionId: string) => Promise<ApiResult<any[]>>
     clear: () => Promise<ApiResult>
     search: (query: string, sessionId?: string) => Promise<ApiResult<any[]>>
@@ -386,6 +475,7 @@ export interface ElectronAPI {
   app: {
     getVersion: () => Promise<string>
     getDownloadsPath: () => Promise<string>
+    setToolDockOpen?: (open: boolean, width?: number) => Promise<{ success: boolean; error?: string }>
   }
   logs: {
     get: (filter?: any) => Promise<any[]>

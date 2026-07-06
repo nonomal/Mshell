@@ -10,6 +10,7 @@ import {
   prepareSSHConnectionOptions,
   processProxyJumpPrivateKeys
 } from '../utils/ssh-connect-options'
+import { portForwardManager } from '../managers/PortForwardManager'
 
 /**
  * 注册 SSH IPC 处理器
@@ -93,6 +94,7 @@ export function registerSSHHandlers() {
   ipcMain.handle('ssh:disconnect', async (_event, id: string) => {
     try {
       const connection = sshConnectionManager.getConnection(id)
+      await portForwardManager.stopForwardsByConnection(id)
       await sshConnectionManager.disconnect(id)
       if (connection) {
         logger.logConnection(
@@ -265,6 +267,10 @@ export function registerSSHHandlers() {
   })
 
   sshConnectionManager.on('close', (id: string) => {
+    portForwardManager.stopForwardsByConnection(id).catch((error) => {
+      logger.logError('connection', `Failed to stop port forwards for session ${id}`, error)
+    })
+
     const windows = BrowserWindow.getAllWindows()
     windows.forEach((win) => {
       win.webContents.send('ssh:close', id)

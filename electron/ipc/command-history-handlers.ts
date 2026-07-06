@@ -28,6 +28,19 @@ export function registerCommandHistoryHandlers() {
     }
   })
 
+  // 获取命令历史面板数据（列表、统计、最常用命令）
+  ipcMain.handle(
+    'commandHistory:getPanelData',
+    async (_event, limit: number = 300, mostUsedLimit: number = 10) => {
+      try {
+        const panelData = commandHistoryManager.getPanelData(limit, mostUsedLimit)
+        return { success: true, data: panelData }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    }
+  )
+
   // 获取指定会话的历史
   ipcMain.handle('commandHistory:getBySession', async (_event, sessionId: string) => {
     try {

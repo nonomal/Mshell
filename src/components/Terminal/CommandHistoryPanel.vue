@@ -6,6 +6,7 @@
         <el-button :icon="Refresh" size="small" @click="loadHistory">刷新</el-button>
         <el-button :icon="Download" size="small" @click="exportHistory">导出</el-button>
         <el-button :icon="Delete" size="small" type="danger" @click="clearHistory">清空</el-button>
+        <el-button :icon="Close" link @click="$emit('close')" />
       </div>
     </div>
 
@@ -127,7 +128,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search, Refresh, Download, Delete, Star, StarFilled,
-  CopyDocument, Document
+  CopyDocument, Document, Close
 } from '@element-plus/icons-vue'
 
 interface CommandHistory {
@@ -151,6 +152,7 @@ interface Statistics {
 
 const emit = defineEmits<{
   select: [command: string]
+  close: []
 }>()
 
 const loading = ref(false)
@@ -201,21 +203,11 @@ const displayedHistory = computed(() => {
 const loadHistory = async () => {
   loading.value = true
   try {
-    const result = await window.electronAPI.commandHistory?.getAll?.(1000)
+    const result = await window.electronAPI.commandHistory?.getPanelData?.(300, 10)
     if (result?.success && result.data) {
-      history.value = result.data
-    }
-
-    // 加载统计信息
-    const statsResult = await window.electronAPI.commandHistory?.getStatistics?.()
-    if (statsResult?.success && statsResult.data) {
-      statistics.value = statsResult.data
-    }
-
-    // 加载最常用命令
-    const mostUsedResult = await window.electronAPI.commandHistory?.getMostUsed?.(10)
-    if (mostUsedResult?.success && mostUsedResult.data) {
-      mostUsedCommands.value = mostUsedResult.data
+      history.value = result.data.history || []
+      statistics.value = result.data.statistics || statistics.value
+      mostUsedCommands.value = result.data.mostUsedCommands || []
     }
   } catch (error: any) {
     ElMessage.error(`加载历史失败: ${error.message}`)

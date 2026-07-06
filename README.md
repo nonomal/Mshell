@@ -2,6 +2,10 @@
 
 MShell 是一款现代化、功能丰富的 SSH 客户端，基于 Electron、Vue 3 和 TypeScript 构建。
 
+## 支持客户端
+
+支持客户端： Windows + Android
+
 ## ✨ 核心特性
 
 ### 🔐 SSH 连接管理

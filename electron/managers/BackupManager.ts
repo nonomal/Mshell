@@ -289,9 +289,9 @@ export class BackupManager {
 
   private getBackupVersion(): string {
     try {
-      return app.getVersion() || '0.2.8'
+      return app.getVersion() || '0.2.9'
     } catch {
-      return '0.2.8'
+      return '0.2.9'
     }
   }
 
@@ -1023,12 +1023,19 @@ export class BackupManager {
       if (options.restorePortForwards && backupData.portForwards) {
         for (const forward of backupData.portForwards) {
           try {
+            const restoredSessionId = mapSessionReference(forward.sessionId || forward.connectionId)
+            if (!restoredSessionId) {
+              logger.logError('system', 'Failed to restore port forward', new Error('Missing sessionId'))
+              continue
+            }
+
             const restoredForward = {
               ...forward,
-              connectionId: mapSessionReference(forward.connectionId),
+              sessionId: restoredSessionId,
               status: 'inactive' as const
             }
             delete restoredForward.error
+            delete restoredForward.connectionId
 
             const existing = portForwardManager.getAllForwards().find((f) => f.id === forward.id)
             if (existing) {

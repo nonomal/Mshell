@@ -6,7 +6,28 @@
     <div class="app-layout" v-show="lockStatusReady && !isLocked">
       <Sidebar @menu-select="handleMenuSelect" @about-select="handleAboutSelect" />
 
-      <div class="app-main">
+      <aside
+        class="app-tool-dock"
+        :class="{ open: appStore.activeView === 'sessions' && appToolDockVisible }"
+        :style="appToolDockStyle"
+      >
+        <div
+          v-if="appStore.activeView === 'sessions' && appToolDockVisible"
+          class="app-tool-dock-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          title="拖动调整面板宽度"
+          @mousedown="startToolDockResize"
+        ></div>
+        <div id="app-tool-dock-host" class="app-tool-dock-host"></div>
+      </aside>
+
+      <div
+        ref="appMainRef"
+        class="app-main"
+        :class="{ 'is-width-locked': appMainLockedWidth !== null }"
+        :style="appMainLockedStyle"
+      >
         <div class="app-header">
           <div class="app-title-drag"></div>
           <div class="header-actions">
@@ -139,134 +160,145 @@
                 </div>
               </div>
 
-              <!-- 分屏内容区域 -->
-              <div
-                v-if="showSplitView && sshTerminals.length >= 2"
-                class="split-terminals-container"
-                :class="{
-                  'broadcast-active': broadcastMode,
-                  'has-maximized': maximizedPaneId !== null
-                }"
-                :style="maximizedPaneId ? {} : gridStyle"
-              >
-                <div
-                  v-for="(tab, index) in sshTerminals"
-                  :key="`split-${tab.id}`"
-                  class="split-terminal-pane"
-                  :class="{
-                    active: appStore.activeTab === tab.id,
-                    maximized: maximizedPaneId === tab.id,
-                    hidden: maximizedPaneId !== null && maximizedPaneId !== tab.id
-                  }"
-                  @click="handlePaneClick(tab.id)"
-                >
-                  <div class="pane-header" @dblclick="toggleMaximize(tab.id)">
-                    <div class="pane-info">
-                      <span class="pane-index">{{ index + 1 }}</span>
-                      <span class="pane-title"
-                        >{{ tab.session?.username }}@{{ tab.session?.host }}</span
-                      >
-                      <span class="pane-name">({{ tab.name }})</span>
-                    </div>
-                    <div class="pane-actions">
-                      <el-tooltip
-                        :content="maximizedPaneId === tab.id ? '还原' : '最大化'"
-                        placement="top"
-                      >
-                        <el-button link size="small" @click.stop="toggleMaximize(tab.id)">
-                          {{ maximizedPaneId === tab.id ? '🗗' : '🗖' }}
-                        </el-button>
-                      </el-tooltip>
-                      <el-button
-                        type="danger"
-                        link
-                        size="small"
-                        @click.stop="handleCloseTab(tab.id)"
-                      >
-                        ✖
-                      </el-button>
+              <div class="terminal-workspace">
+                <div class="terminal-workspace-main">
+                  <!-- 分屏内容区域 -->
+                  <div
+                    v-if="showSplitView && sshTerminals.length >= 2"
+                    class="split-terminals-container"
+                    :class="{
+                      'broadcast-active': broadcastMode,
+                      'has-maximized': maximizedPaneId !== null
+                    }"
+                    :style="maximizedPaneId ? {} : gridStyle"
+                  >
+                    <div
+                      v-for="(tab, index) in sshTerminals"
+                      :key="`split-${tab.id}`"
+                      class="split-terminal-pane"
+                      :class="{
+                        active: appStore.activeTab === tab.id,
+                        maximized: maximizedPaneId === tab.id,
+                        hidden: maximizedPaneId !== null && maximizedPaneId !== tab.id
+                      }"
+                      @click="handlePaneClick(tab.id)"
+                    >
+                      <div class="pane-header" @dblclick="toggleMaximize(tab.id)">
+                        <div class="pane-info">
+                          <span class="pane-index">{{ index + 1 }}</span>
+                          <span class="pane-title"
+                            >{{ tab.session?.username }}@{{ tab.session?.host }}</span
+                          >
+                          <span class="pane-name">({{ tab.name }})</span>
+                        </div>
+                        <div class="pane-actions">
+                          <el-tooltip
+                            :content="maximizedPaneId === tab.id ? '还原' : '最大化'"
+                            placement="top"
+                          >
+                            <el-button link size="small" @click.stop="toggleMaximize(tab.id)">
+                              {{ maximizedPaneId === tab.id ? '🗗' : '🗖' }}
+                            </el-button>
+                          </el-tooltip>
+                          <el-button
+                            type="danger"
+                            link
+                            size="small"
+                            @click.stop="handleCloseTab(tab.id)"
+                          >
+                            ✖
+                          </el-button>
+                        </div>
+                      </div>
+                      <div class="pane-content">
+                        <TerminalTab
+                          :connection-id="tab.id"
+                          :session="tab.session"
+                          :terminal-options="appStore.terminalOptions"
+                          :hide-close-button="true"
+                          :broadcast-mode="broadcastMode"
+                          @broadcast-input="handleBroadcastInput"
+                          @tool-dock-visibility-change="handleToolDockVisibilityChange"
+                        />
+                      </div>
                     </div>
                   </div>
-                  <div class="pane-content">
-                    <TerminalTab
-                      :connection-id="tab.id"
-                      :session="tab.session"
-                      :terminal-options="appStore.terminalOptions"
-                      :hide-close-button="true"
-                      :broadcast-mode="broadcastMode"
-                      @broadcast-input="handleBroadcastInput"
-                    />
-                  </div>
+
+                  <!-- 标签页视图 -->
+                  <el-tabs
+                    v-if="!showSplitView || sshTerminals.length < 2"
+                    v-model="appStore.activeTab"
+                    type="card"
+                    closable
+                    class="premium-tabs"
+                    @tab-remove="appStore.removeTab"
+                  >
+                    <el-tab-pane
+                      v-for="(tab, index) in appStore.tabs"
+                      :key="tab.id"
+                      :name="tab.id"
+                    >
+                      <template #label>
+                        <DraggableTab
+                          :tab-id="tab.id"
+                          :tab-data="tab"
+                          :index="index"
+                          :is-active="appStore.activeTab === tab.id"
+                          @reorder="handleTabReorder"
+                          @click="appStore.activeTab = tab.id"
+                        >
+                          {{ tab.name }}
+                        </DraggableTab>
+                      </template>
+                      <SplitTerminalTab
+                        v-if="tab.isSplit"
+                        :connection-id="tab.id"
+                        :session="tab.session"
+                        :terminal-options="appStore.terminalOptions"
+                      />
+                      <VNCTab
+                        v-else-if="tab.session.type === 'vnc'"
+                        :connection-id="tab.id"
+                        :session="tab.session"
+                        @close="handleCloseTab"
+                      />
+                      <TerminalTab
+                        v-else
+                        :connection-id="tab.id"
+                        :session="tab.session"
+                        :terminal-options="appStore.terminalOptions"
+                        @tool-dock-visibility-change="handleToolDockVisibilityChange"
+                      />
+                    </el-tab-pane>
+
+                    <template v-if="appStore.tabs.length === 0">
+                      <div class="empty-state">
+                        <div class="empty-state-content">
+                          <div class="empty-icon-wrapper">
+                            <el-icon :size="48"><Connection /></el-icon>
+                          </div>
+                          <h3>{{ t('home.readyToConnect') }}</h3>
+                          <p>{{ t('home.selectSessionHint') }}</p>
+                          <div class="empty-actions">
+                            <el-button
+                              type="primary"
+                              @click="appStore.showSessionForm = true"
+                              size="large"
+                            >
+                              {{ t('home.createNewSession') }}
+                            </el-button>
+                            <el-button @click="appStore.showQuickConnect = true" size="large">
+                              {{ t('home.quickConnect') }}
+                            </el-button>
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+                  </el-tabs>
                 </div>
               </div>
-
-              <!-- 标签页视图 -->
-              <el-tabs
-                v-if="!showSplitView || sshTerminals.length < 2"
-                v-model="appStore.activeTab"
-                type="card"
-                closable
-                class="premium-tabs"
-                @tab-remove="appStore.removeTab"
-              >
-                <el-tab-pane v-for="(tab, index) in appStore.tabs" :key="tab.id" :name="tab.id">
-                  <template #label>
-                    <DraggableTab
-                      :tab-id="tab.id"
-                      :tab-data="tab"
-                      :index="index"
-                      :is-active="appStore.activeTab === tab.id"
-                      @reorder="handleTabReorder"
-                      @click="appStore.activeTab = tab.id"
-                    >
-                      {{ tab.name }}
-                    </DraggableTab>
-                  </template>
-                  <SplitTerminalTab
-                    v-if="tab.isSplit"
-                    :connection-id="tab.id"
-                    :session="tab.session"
-                    :terminal-options="appStore.terminalOptions"
-                  />
-                  <VNCTab
-                    v-else-if="tab.session.type === 'vnc'"
-                    :connection-id="tab.id"
-                    :session="tab.session"
-                    @close="handleCloseTab"
-                  />
-                  <TerminalTab
-                    v-else
-                    :connection-id="tab.id"
-                    :session="tab.session"
-                    :terminal-options="appStore.terminalOptions"
-                  />
-                </el-tab-pane>
-
-                <template v-if="appStore.tabs.length === 0">
-                  <div class="empty-state">
-                    <div class="empty-state-content">
-                      <div class="empty-icon-wrapper">
-                        <el-icon :size="48"><Connection /></el-icon>
-                      </div>
-                      <h3>{{ t('home.readyToConnect') }}</h3>
-                      <p>{{ t('home.selectSessionHint') }}</p>
-                      <div class="empty-actions">
-                        <el-button
-                          type="primary"
-                          @click="appStore.showSessionForm = true"
-                          size="large"
-                        >
-                          {{ t('home.createNewSession') }}
-                        </el-button>
-                        <el-button @click="appStore.showQuickConnect = true" size="large">
-                          {{ t('home.quickConnect') }}
-                        </el-button>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-              </el-tabs>
             </div>
+
           </div>
 
           <div v-show="appStore.activeView === 'sftp'" class="content-panel">
@@ -274,7 +306,15 @@
           </div>
 
           <div v-show="appStore.activeView === 'port-forward'" class="content-panel">
-            <PortForwardPanel v-if="appStore.activeTab" :connection-id="appStore.activeTab" />
+            <PortForwardPanel
+              v-if="
+                appStore.activeTab &&
+                appStore.currentSession &&
+                (!appStore.currentSession.type || appStore.currentSession.type === 'ssh')
+              "
+              :session-id="appStore.currentSession.id"
+              :connection-id="appStore.activeTab"
+            />
             <div v-else class="empty-state">
               <div class="empty-state-content">
                 <el-icon :size="64"><Connection /></el-icon>
@@ -318,6 +358,7 @@
           <div v-show="appStore.activeView === 'settings'" class="content-panel">
             <SettingsPanel :initial-tab="settingsInitialTab" :tab-request-key="settingsTabRequestKey" />
           </div>
+
         </div>
 
         <StatusBar
@@ -327,6 +368,7 @@
           class="app-statusbar"
         />
       </div>
+
     </div>
 
     <div v-if="!lockStatusReady" class="app-boot-screen">
@@ -359,7 +401,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed } from 'vue'
+import { onMounted, onUnmounted, ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Connection,
@@ -426,6 +468,30 @@ const showBatchImport = ref(false)
 const maximizedPaneId = ref<string | null>(null)
 const settingsInitialTab = ref('general')
 const settingsTabRequestKey = ref(0)
+const appToolDockVisible = ref(false)
+const TOOL_DOCK_DEFAULT_WIDTH = 460
+const TOOL_DOCK_MIN_WIDTH = 340
+const TOOL_DOCK_MAX_WIDTH = 780
+const appToolDockWidth = ref(TOOL_DOCK_DEFAULT_WIDTH)
+const isToolDockResizing = ref(false)
+const appMainRef = ref<HTMLElement | null>(null)
+const appMainLockedWidth = ref<number | null>(null)
+
+const clampToolDockWidth = (width: number) =>
+  Math.min(TOOL_DOCK_MAX_WIDTH, Math.max(TOOL_DOCK_MIN_WIDTH, Math.round(width)))
+
+const appToolDockStyle = computed(() => ({
+  '--tool-dock-width': `${appToolDockWidth.value}px`
+}))
+
+const appMainLockedStyle = computed(() =>
+  appMainLockedWidth.value === null
+    ? undefined
+    : {
+        width: `${appMainLockedWidth.value}px`,
+        flexBasis: `${appMainLockedWidth.value}px`
+      }
+)
 
 const openSettingsPanel = (tab = 'general') => {
   settingsInitialTab.value = tab
@@ -520,6 +586,71 @@ const handleBroadcastInput = (data: string, sourceId: string) => {
     }
   })
 }
+
+const setAppToolDockVisible = async (visible: boolean) => {
+  if (visible === appToolDockVisible.value) return
+
+  if (visible) {
+    const mainWidth = appMainRef.value?.getBoundingClientRect().width
+    if (mainWidth && mainWidth > 0) {
+      appMainLockedWidth.value = Math.round(mainWidth)
+    }
+
+    const result = await window.electronAPI.app?.setToolDockOpen?.(
+      true,
+      appToolDockWidth.value
+    )
+    if (result && !result.success) {
+      console.warn('[App] Failed to expand tool dock window:', result.error)
+      appMainLockedWidth.value = null
+      return
+    }
+    appToolDockVisible.value = true
+    return
+  }
+
+  appToolDockVisible.value = false
+  await window.electronAPI.app?.setToolDockOpen?.(false, appToolDockWidth.value)
+  appMainLockedWidth.value = null
+}
+
+const startToolDockResize = (event: MouseEvent) => {
+  if (!appToolDockVisible.value) return
+
+  event.preventDefault()
+  const startX = event.clientX
+  const startWidth = appToolDockWidth.value
+  isToolDockResizing.value = true
+  document.body.classList.add('is-tool-dock-resizing')
+
+  const handleMouseMove = (moveEvent: MouseEvent) => {
+    const delta = moveEvent.clientX - startX
+    appToolDockWidth.value = clampToolDockWidth(startWidth - delta)
+  }
+
+  const handleMouseUp = () => {
+    isToolDockResizing.value = false
+    document.body.classList.remove('is-tool-dock-resizing')
+    window.removeEventListener('mousemove', handleMouseMove)
+    window.removeEventListener('mouseup', handleMouseUp)
+  }
+
+  window.addEventListener('mousemove', handleMouseMove)
+  window.addEventListener('mouseup', handleMouseUp)
+}
+
+const handleToolDockVisibilityChange = (connectionId: string, visible: boolean) => {
+  if (appStore.activeTab === connectionId) {
+    void setAppToolDockVisible(visible)
+  }
+}
+
+watch(
+  () => [appStore.activeTab, appStore.activeView],
+  () => {
+    void setAppToolDockVisible(false)
+  }
+)
 
 // 切换面板最大化
 const toggleMaximize = (paneId: string) => {
@@ -679,6 +810,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  document.body.classList.remove('is-tool-dock-resizing')
+
   // 清理所有 IPC 监听器
   ipcCleanups.forEach((cleanup) => {
     try {
@@ -1235,6 +1368,7 @@ body,
 }
 
 .app-main {
+  order: 1;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -1283,6 +1417,7 @@ body,
   flex: 1;
   overflow: hidden;
   display: flex;
+  position: relative;
 }
 
 .content-panel {
@@ -1359,11 +1494,125 @@ body,
 
 /* 终端面板 */
 .terminal-panel {
-  flex: 1;
+  order: 2;
+  flex: 1 1 auto;
+  min-width: 0;
+  position: relative;
   overflow: hidden;
   background: var(--bg-main);
   display: flex;
   flex-direction: column;
+}
+
+.terminal-workspace {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.terminal-workspace-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-tool-dock {
+  order: 2;
+  flex: 0 0 0;
+  width: 0;
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(var(--primary-color-rgb), 0.035), transparent 180px),
+    var(--bg-secondary);
+  border-left: 0 solid transparent;
+  box-shadow: none;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 2;
+  position: relative;
+  transition:
+    flex-basis 0.16s ease,
+    width 0.16s ease,
+    opacity 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.app-tool-dock-resizer {
+  position: absolute;
+  left: -5px;
+  top: 0;
+  bottom: 0;
+  z-index: 5;
+  width: 10px;
+  cursor: col-resize;
+  background: transparent;
+}
+
+.app-tool-dock-resizer::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: transparent;
+  transition:
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.app-tool-dock-resizer:hover::after,
+:global(body.is-tool-dock-resizing) .app-tool-dock-resizer::after {
+  background: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(var(--primary-color-rgb), 0.14);
+}
+
+:global(body.is-tool-dock-resizing) {
+  cursor: col-resize;
+  user-select: none;
+}
+
+:global(body.is-tool-dock-resizing *) {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+.app-tool-dock.open {
+  flex-basis: var(--tool-dock-width);
+  width: var(--tool-dock-width);
+  opacity: 1;
+  border-left: 1px solid var(--border-strong, var(--border-color));
+  box-shadow:
+    inset 1px 0 0 rgba(255, 255, 255, 0.04),
+    -10px 0 22px rgba(15, 23, 42, 0.08);
+  pointer-events: auto;
+}
+
+.app-tool-dock-host {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  padding: 8px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+@media (max-width: 1280px) {
+  .app-tool-dock.open {
+    flex-basis: var(--tool-dock-width);
+    width: var(--tool-dock-width);
+  }
 }
 
 /* 专业标签页样式 */
@@ -1447,6 +1696,12 @@ body,
 
 .premium-tabs :deep(.el-tabs__item .draggable-tab) {
   flex: 1 1 auto;
+  min-width: 0;
+}
+
+.app-main.is-width-locked {
+  flex-grow: 1;
+  flex-shrink: 1;
   min-width: 0;
 }
 

@@ -239,17 +239,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('fs:extract', archivePath, targetDir)
   },
 
+  // Docker operations
+  docker: {
+    getOverview: (connectionId: string) => ipcRenderer.invoke('docker:getOverview', connectionId),
+    install: (connectionId: string) => ipcRenderer.invoke('docker:install', connectionId),
+    cleanupUnused: (connectionId: string) => ipcRenderer.invoke('docker:cleanupUnused', connectionId),
+    containerAction: (connectionId: string, action: string, containerId: string, options?: any) =>
+      ipcRenderer.invoke('docker:containerAction', connectionId, action, containerId, options)
+  },
+
   // Port forward operations
   portForward: {
-    getAll: (connectionId: string) => ipcRenderer.invoke('portForward:getAll', connectionId),
-    add: (connectionId: string, config: any) =>
-      ipcRenderer.invoke('portForward:add', connectionId, config),
-    start: (connectionId: string, forwardId: string) =>
-      ipcRenderer.invoke('portForward:start', connectionId, forwardId),
-    stop: (connectionId: string, forwardId: string) =>
-      ipcRenderer.invoke('portForward:stop', connectionId, forwardId),
-    delete: (connectionId: string, forwardId: string) =>
-      ipcRenderer.invoke('portForward:delete', connectionId, forwardId),
+    getAll: (sessionId: string) => ipcRenderer.invoke('portForward:getAll', sessionId),
+    add: (sessionId: string, connectionId: string, config: any) =>
+      ipcRenderer.invoke('portForward:add', sessionId, connectionId, config),
+    start: (sessionId: string, connectionId: string, forwardId: string) =>
+      ipcRenderer.invoke('portForward:start', sessionId, connectionId, forwardId),
+    stop: (sessionId: string, connectionId: string, forwardId: string) =>
+      ipcRenderer.invoke('portForward:stop', sessionId, connectionId, forwardId),
+    delete: (sessionId: string, connectionId: string, forwardId: string) =>
+      ipcRenderer.invoke('portForward:delete', sessionId, connectionId, forwardId),
     update: (forwardId: string, updates: any) =>
       ipcRenderer.invoke('portForward:update', forwardId, updates),
     getTrafficStats: (forwardId: string) =>
@@ -257,6 +266,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getAllTrafficStats: () => ipcRenderer.invoke('portForward:getAllTrafficStats'),
     resetTrafficStats: (forwardId: string) =>
       ipcRenderer.invoke('portForward:resetTrafficStats', forwardId),
+    getSystemPersistencePlan: (sessionId: string, forwardId: string) =>
+      ipcRenderer.invoke('portForward:getSystemPersistencePlan', sessionId, forwardId),
+    getSystemPersistenceStatus: (sessionId: string, forwardId: string) =>
+      ipcRenderer.invoke('portForward:getSystemPersistenceStatus', sessionId, forwardId),
+    installSystemPersistence: (sessionId: string, forwardId: string) =>
+      ipcRenderer.invoke('portForward:installSystemPersistence', sessionId, forwardId),
+    uninstallSystemPersistence: (sessionId: string, forwardId: string) =>
+      ipcRenderer.invoke('portForward:uninstallSystemPersistence', sessionId, forwardId),
     createTemplate: (data: any) => ipcRenderer.invoke('portForward:createTemplate', data),
     getAllTemplates: () => ipcRenderer.invoke('portForward:getAllTemplates'),
     getTemplate: (id: string) => ipcRenderer.invoke('portForward:getTemplate', id),
@@ -265,9 +282,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     deleteTemplate: (id: string) => ipcRenderer.invoke('portForward:deleteTemplate', id),
     getTemplatesByTag: (tag: string) => ipcRenderer.invoke('portForward:getTemplatesByTag', tag),
     searchTemplates: (query: string) => ipcRenderer.invoke('portForward:searchTemplates', query),
-    createFromTemplate: (templateId: string, connectionId: string) =>
-      ipcRenderer.invoke('portForward:createFromTemplate', templateId, connectionId),
-    autoStart: (connectionId: string) => ipcRenderer.invoke('portForward:autoStart', connectionId)
+    createFromTemplate: (templateId: string, sessionId: string) =>
+      ipcRenderer.invoke('portForward:createFromTemplate', templateId, sessionId),
+    autoStart: (sessionId: string, connectionId: string) =>
+      ipcRenderer.invoke('portForward:autoStart', sessionId, connectionId)
   },
 
   // Snippet operations
@@ -296,6 +314,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   commandHistory: {
     add: (data: any) => ipcRenderer.invoke('commandHistory:add', data),
     getAll: (limit?: number) => ipcRenderer.invoke('commandHistory:getAll', limit),
+    getPanelData: (limit?: number, mostUsedLimit?: number) =>
+      ipcRenderer.invoke('commandHistory:getPanelData', limit, mostUsedLimit),
     getBySession: (sessionId: string) =>
       ipcRenderer.invoke('commandHistory:getBySession', sessionId),
     search: (query: string, sessionId?: string) =>
@@ -396,7 +416,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // App info
   app: {
     getVersion: () => ipcRenderer.invoke('app:getVersion'),
-    getDownloadsPath: () => ipcRenderer.invoke('app:getDownloadsPath')
+    getDownloadsPath: () => ipcRenderer.invoke('app:getDownloadsPath'),
+    setToolDockOpen: (open: boolean, width?: number) =>
+      ipcRenderer.invoke('toolDock:setOpen', open, width)
   },
 
   // Server Monitor operations
@@ -850,5 +872,6 @@ export interface ElectronAPI {
   app: {
     getVersion: () => Promise<string>
     getDownloadsPath: () => Promise<string>
+    setToolDockOpen: (open: boolean, width?: number) => Promise<{ success: boolean; error?: string }>
   }
 }

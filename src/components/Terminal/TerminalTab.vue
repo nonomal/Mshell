@@ -41,6 +41,7 @@
               <el-checkbox v-model="toolbarConfig.search" size="small">搜索</el-checkbox>
               <el-checkbox v-model="toolbarConfig.history" size="small">命令历史</el-checkbox>
               <el-checkbox v-model="toolbarConfig.monitor" size="small">监控</el-checkbox>
+              <el-checkbox v-model="toolbarConfig.docker" size="small">Docker</el-checkbox>
               <el-checkbox v-model="toolbarConfig.file" size="small">文件管理</el-checkbox>
               <el-checkbox v-model="toolbarConfig.ai" size="small">AI 助手</el-checkbox>
               <el-checkbox v-model="toolbarConfig.quickCommand" size="small">快捷命令</el-checkbox>
@@ -169,7 +170,7 @@
             type="primary"
             link
             :icon="Document"
-            @click="showSnippetDialog = !showSnippetDialog"
+            @click="toggleToolDockPanel('snippet')"
             class="action-btn"
             :class="{ 'is-active': showSnippetDialog }"
           />
@@ -192,7 +193,7 @@
             type="primary"
             link
             :icon="Clock"
-            @click="showCommandHistory = !showCommandHistory"
+            @click="toggleToolDockPanel('history')"
             class="action-btn"
             :class="{ 'is-active': showCommandHistory }"
           />
@@ -208,9 +209,25 @@
             type="primary"
             link
             :icon="Monitor"
-            @click="showMonitor = !showMonitor"
+            @click="toggleToolDockPanel('monitor')"
             class="action-btn"
             :class="{ 'is-active': showMonitor }"
+          />
+        </el-tooltip>
+
+        <!-- Docker -->
+        <el-tooltip
+          v-if="toolbarConfig.docker"
+          :content="showDockerPanel ? '关闭 Docker' : 'Docker 管理'"
+          placement="bottom"
+        >
+          <el-button
+            type="primary"
+            link
+            :icon="Box"
+            @click="toggleToolDockPanel('docker')"
+            class="action-btn"
+            :class="{ 'is-active': showDockerPanel }"
           />
         </el-tooltip>
 
@@ -240,7 +257,7 @@
             type="primary"
             link
             :icon="ChatDotRound"
-            @click="showTerminalAI = !showTerminalAI"
+            @click="toggleToolDockPanel('ai')"
             class="action-btn"
             :class="{ 'is-active': showTerminalAI }"
           />
@@ -256,7 +273,7 @@
             type="primary"
             link
             :icon="Promotion"
-            @click="showQuickCommand = !showQuickCommand"
+            @click="toggleToolDockPanel('quickCommand')"
             class="action-btn"
             :class="{ 'is-active': showQuickCommand }"
           />
@@ -315,6 +332,7 @@
           'with-history': showCommandHistory,
           'with-ai': showTerminalAI,
           'with-file': showFilePanel,
+          'with-docker': showDockerPanel,
           'with-snippet': showSnippetDialog,
           'with-quick-command': showQuickCommand,
           'has-terminal-background': hasEffectiveTerminalBackground
@@ -394,20 +412,26 @@
         />
       </div>
 
-      <!-- 命令历史面板 -->
-      <div v-if="showCommandHistory" class="history-sidebar">
-        <CommandHistoryPanel @select="handleCommandSelect" />
-      </div>
+    </div>
 
-      <!-- 服务器监控面板 -->
-      <transition name="slide-left">
-        <div v-if="showMonitor" class="monitor-sidebar">
-          <ServerMonitorPanel :session-id="connectionId" />
+    <Teleport to="#app-tool-dock-host">
+      <div v-if="isActiveTab && hasExternalToolPanels" class="terminal-external-dock">
+        <!-- 命令历史面板 -->
+        <div v-if="showCommandHistory" class="history-sidebar">
+          <CommandHistoryPanel @select="handleCommandSelect" @close="showCommandHistory = false" />
         </div>
-      </transition>
 
-      <!-- 终端 AI 助手面板 -->
-      <transition name="slide-left">
+        <!-- 服务器监控面板 -->
+        <div v-if="showMonitor" class="monitor-sidebar">
+          <ServerMonitorPanel :session-id="connectionId" @close="showMonitor = false" />
+        </div>
+
+        <!-- Docker 管理面板 -->
+        <div v-if="showDockerPanel" class="docker-sidebar">
+          <DockerPanel :connection-id="connectionId" @close="showDockerPanel = false" />
+        </div>
+
+        <!-- 终端 AI 助手面板 -->
         <div v-if="showTerminalAI" class="ai-sidebar">
           <TerminalAIChatPanel
             ref="terminalAIRef"
@@ -418,10 +442,8 @@
             @close="showTerminalAI = false"
           />
         </div>
-      </transition>
 
-      <!-- 文件管理面板 -->
-      <transition name="slide-left">
+        <!-- 文件管理面板 -->
         <div v-if="showFilePanel" class="file-sidebar">
           <TerminalFilePanel
             :connection-id="connectionId"
@@ -432,17 +454,13 @@
             @request-current-dir="updateCurrentWorkingDir"
           />
         </div>
-      </transition>
 
-      <!-- 快捷命令面板 -->
-      <transition name="slide-left">
+        <!-- 快捷命令面板 -->
         <div v-if="showQuickCommand" class="quick-command-sidebar">
           <QuickCommandPanel :connection-id="connectionId" @close="showQuickCommand = false" />
         </div>
-      </transition>
 
-      <!-- 命令片段面板 -->
-      <transition name="slide-left">
+        <!-- 命令片段面板 -->
         <div v-if="showSnippetDialog" class="snippet-sidebar">
           <div class="sidebar-header">
             <h3>命令片段</h3>
@@ -525,8 +543,8 @@
             </div>
           </div>
         </div>
-      </transition>
-    </div>
+      </div>
+    </Teleport>
 
     <!-- Variable Input Dialog -->
     <el-dialog
@@ -575,7 +593,8 @@ import {
   Promotion,
   Setting,
   CopyDocument,
-  Picture
+  Picture,
+  Box
 } from '@element-plus/icons-vue'
 import { ElMessage, ElNotification } from 'element-plus'
 import TerminalView from './TerminalView.vue'
@@ -583,6 +602,7 @@ import TerminalSearch from './TerminalSearch.vue'
 import CommandAutocomplete from './CommandAutocomplete.vue'
 import CommandHistoryPanel from './CommandHistoryPanel.vue'
 import ServerMonitorPanel from '../Monitor/ServerMonitorPanel.vue'
+import DockerPanel from '../Docker/DockerPanel.vue'
 import TerminalAIChatPanel from '../AI/TerminalAIChatPanel.vue'
 import TerminalFilePanel from './TerminalFilePanel.vue'
 import QuickCommandPanel from './QuickCommandPanel.vue'
@@ -643,6 +663,7 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   close: [connectionId: string]
   'broadcast-input': [data: string, sourceId: string]
+  'tool-dock-visibility-change': [connectionId: string, visible: boolean]
 }>()
 
 const getInitialConnectionState = () => {
@@ -679,6 +700,17 @@ const showCommandHistory = ref(false)
 const showTerminalAI = ref(false)
 const showFilePanel = ref(false)
 const showQuickCommand = ref(false)
+const showDockerPanel = ref(false)
+const hasExternalToolPanels = computed(
+  () =>
+    showCommandHistory.value ||
+    showMonitor.value ||
+    showDockerPanel.value ||
+    showTerminalAI.value ||
+    showFilePanel.value ||
+    showQuickCommand.value ||
+    showSnippetDialog.value
+)
 
 // 工具栏配置（控制显示/隐藏）
 const toolbarConfig = ref({
@@ -689,6 +721,7 @@ const toolbarConfig = ref({
   search: true,
   history: true,
   monitor: true,
+  docker: true,
   file: true,
   ai: true,
   quickCommand: true
@@ -769,13 +802,73 @@ const updateCurrentWorkingDir = () => {
   }
 }
 
+type ToolDockPanel = 'snippet' | 'history' | 'monitor' | 'docker' | 'file' | 'ai' | 'quickCommand'
+
+const closeToolDockPanels = () => {
+  showSnippetDialog.value = false
+  showCommandHistory.value = false
+  showMonitor.value = false
+  showDockerPanel.value = false
+  showFilePanel.value = false
+  showTerminalAI.value = false
+  showQuickCommand.value = false
+}
+
+const isToolDockPanelOpen = (panel: ToolDockPanel) => {
+  switch (panel) {
+    case 'snippet':
+      return showSnippetDialog.value
+    case 'history':
+      return showCommandHistory.value
+    case 'monitor':
+      return showMonitor.value
+    case 'docker':
+      return showDockerPanel.value
+    case 'file':
+      return showFilePanel.value
+    case 'ai':
+      return showTerminalAI.value
+    case 'quickCommand':
+      return showQuickCommand.value
+  }
+}
+
+const openToolDockPanel = (panel: ToolDockPanel) => {
+  switch (panel) {
+    case 'snippet':
+      showSnippetDialog.value = true
+      break
+    case 'history':
+      showCommandHistory.value = true
+      break
+    case 'monitor':
+      showMonitor.value = true
+      break
+    case 'docker':
+      showDockerPanel.value = true
+      break
+    case 'file':
+      updateCurrentWorkingDir()
+      showFilePanel.value = true
+      break
+    case 'ai':
+      showTerminalAI.value = true
+      break
+    case 'quickCommand':
+      showQuickCommand.value = true
+      break
+  }
+}
+
+const toggleToolDockPanel = (panel: ToolDockPanel) => {
+  const shouldOpen = !isToolDockPanelOpen(panel)
+  closeToolDockPanels()
+  if (shouldOpen) openToolDockPanel(panel)
+}
+
 // 切换文件面板（打开时更新当前目录）
 const toggleFilePanel = () => {
-  if (!showFilePanel.value) {
-    // 打开面板前，获取当前工作目录
-    updateCurrentWorkingDir()
-  }
-  showFilePanel.value = !showFilePanel.value
+  toggleToolDockPanel('file')
 }
 
 // 搜索相关状态
@@ -1016,6 +1109,14 @@ const getActiveAppShellGeneralSettings = (savedSettings: any) => {
 const appStore = useAppStore()
 const isActiveTab = computed(() => appStore.activeTab === props.connectionId)
 
+watch(
+  [isActiveTab, hasExternalToolPanels],
+  ([active, hasPanels]) => {
+    emit('tool-dock-visibility-change', props.connectionId, active && hasPanels)
+  },
+  { immediate: true }
+)
+
 // 键盘事件清理函数（在顶层定义，供 onUnmounted 使用）
 let cleanupKeyboard: (() => void) | null = null
 let cleanupSettingsChange: (() => void) | null = null
@@ -1147,6 +1248,22 @@ const reconnectMessage = computed(() => {
   return ''
 })
 
+const autoStartPortForwards = async () => {
+  if (!props.session?.id || (props.session.type && props.session.type !== 'ssh')) return
+
+  try {
+    const result = await window.electronAPI.portForward?.autoStart?.(
+      props.session.id,
+      props.connectionId
+    )
+    if (!result?.success) {
+      showConnectionNotice('warning', '端口转发自动启动失败', result?.error || '未知错误', 5000)
+    }
+  } catch (error: any) {
+    showConnectionNotice('warning', '端口转发自动启动失败', error.message, 5000)
+  }
+}
+
 // 设置重连事件监听器
 const reconnectListenerCleanups: Array<() => void> = []
 
@@ -1182,6 +1299,7 @@ const setupReconnectListeners = () => {
       reconnectAttempt.value = 0
 
       showConnectionNotice('success', '重连成功', 'SSH 会话已重新连接', 2500)
+      void autoStartPortForwards()
     }
   })
   if (u2) reconnectListenerCleanups.push(u2)
@@ -1586,6 +1704,8 @@ onMounted(async () => {
       } catch (error) {
         console.error('Failed to start connection stats:', error)
       }
+
+      await autoStartPortForwards()
     } else {
       connectionStatus.value = 'error'
       globalConnectionState.delete(props.connectionId)
@@ -1826,18 +1946,6 @@ watch(showSnippetDialog, (newValue) => {
     filterTags.value = []
     snippetSearch.value = ''
   }
-  // 侧边栏状态变化时，延迟调整终端大小
-  setTimeout(() => {
-    if (isActiveTab.value) terminalRef.value?.fit?.()
-  }, 300)
-})
-
-// 监听所有侧边栏状态变化，调整终端大小
-watch([showMonitor, showCommandHistory, showTerminalAI], () => {
-  // 侧边栏状态变化时，延迟调整终端大小
-  setTimeout(() => {
-    if (isActiveTab.value) terminalRef.value?.fit?.()
-  }, 300)
 })
 
 const getCategoryCount = (category: string) => {
@@ -2620,6 +2728,10 @@ defineExpose({
   flex: 1;
 }
 
+.terminal-content.with-docker {
+  flex: 1;
+}
+
 .terminal-content.with-snippet {
   flex: 1;
 }
@@ -2628,51 +2740,105 @@ defineExpose({
   flex: 1;
 }
 
-.history-sidebar {
-  width: 480px;
-  background: var(--bg-main);
-  border-left: 1px solid var(--border-color);
+.terminal-external-dock {
+  display: flex;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  height: 100%;
+  align-items: stretch;
+  justify-content: flex-end;
+  background: transparent;
   overflow: hidden;
+}
+
+.terminal-external-dock > * {
+  width: 100% !important;
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+  height: 100%;
+  overflow: hidden !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: var(--radius-md);
+  background: var(--bg-main);
+  box-shadow:
+    0 10px 24px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.terminal-external-dock .snippet-sidebar {
+  width: 100% !important;
+  max-width: none !important;
+  flex-basis: auto !important;
+}
+
+.terminal-external-dock :deep(.command-history-panel),
+.terminal-external-dock :deep(.server-monitor-panel),
+.terminal-external-dock :deep(.docker-panel),
+.terminal-external-dock :deep(.terminal-ai-panel),
+.terminal-external-dock :deep(.terminal-file-panel),
+.terminal-external-dock :deep(.quick-command-panel) {
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  border-left: 0 !important;
+  background: var(--bg-main);
+}
+
+.terminal-external-dock :deep(.panel-header),
+.terminal-external-dock :deep(.monitor-header),
+.terminal-external-dock :deep(.docker-header),
+.terminal-external-dock :deep(.chat-header),
+.terminal-external-dock .sidebar-header {
+  min-height: 44px !important;
+  padding: 0 12px !important;
+  box-sizing: border-box;
+  background:
+    linear-gradient(90deg, rgba(var(--primary-color-rgb), 0.055), transparent 220px),
+    var(--bg-secondary) !important;
+  border-bottom: 1px solid var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+.terminal-external-dock :deep(.panel-header h3),
+.terminal-external-dock :deep(.monitor-header h3),
+.terminal-external-dock :deep(.docker-header h3),
+.terminal-external-dock :deep(.chat-header .title),
+.terminal-external-dock .sidebar-header h3 {
+  color: var(--text-primary) !important;
+  font-size: var(--text-base) !important;
+  font-weight: 650 !important;
+  letter-spacing: 0;
+}
+
+.history-sidebar {
   display: flex;
   flex-direction: column;
-  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
 }
 
 .monitor-sidebar {
-  width: 320px;
-  background: var(--bg-secondary);
-  border-left: 1px solid var(--border-color);
-  overflow-y: auto;
-  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .ai-sidebar {
-  width: 380px;
-  background: var(--bg-secondary);
-  border-left: 1px solid var(--border-color);
-  flex-shrink: 0;
   display: flex;
   flex-direction: column;
 }
 
 .file-sidebar {
-  width: 320px;
-  background: var(--bg-secondary);
-  border-left: 1px solid var(--border-color);
-  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+}
+
+.docker-sidebar {
+  display: flex;
+  flex-direction: column;
 }
 
 .quick-command-sidebar {
-  width: 360px;
-  background: var(--bg-secondary);
-  border-left: 1px solid var(--border-color);
-  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 
 /* 滑动动画 */

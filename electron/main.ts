@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen } from 'electron'
 import { join } from 'path'
 import { existsSync } from 'fs'
 import { registerSSHHandlers } from './ipc/ssh-handlers'
@@ -26,6 +26,7 @@ import { registerVNCHandlers } from './ipc/vnc-handlers'
 import { registerSyncHandlers } from './ipc/sync-handlers'
 import { registerQuickCommandHandlers } from './ipc/quick-command-handlers'
 import { registerLazyScriptHandlers } from './ipc/lazy-script-handlers'
+import { registerDockerHandlers } from './ipc/docker-handlers'
 import {
   handleTerminalBackgroundProtocol,
   registerTerminalBackgroundHandlers,
@@ -44,6 +45,7 @@ import { auditLogManager } from './managers/AuditLogManager'
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
+let toolDockBaseBounds: Electron.Rectangle | null = null
 const INSTALLER_QUIT_ARG = '--mshell-installer-quit'
 const TRAY_ICON_SIZE = 16
 
@@ -110,6 +112,43 @@ registerLogHandlers()
 registerDialogHandlers()
 ipcMain.handle('app:getVersion', () => app.getVersion())
 ipcMain.handle('app:getDownloadsPath', () => app.getPath('downloads'))
+ipcMain.handle('toolDock:setOpen', (_event, open: boolean, width = 460) => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return { success: false, error: '主窗口不可用' }
+  }
+
+  if (mainWindow.isMaximized() || mainWindow.isFullScreen()) {
+    return { success: false, error: '最大化或全屏窗口不调整尺寸' }
+  }
+
+  if (open) {
+    if (!toolDockBaseBounds) {
+      toolDockBaseBounds = mainWindow.getBounds()
+    }
+
+    const baseBounds = toolDockBaseBounds
+    const display = screen.getDisplayMatching(baseBounds)
+    const workArea = display.workArea
+    const targetWidth = Math.min(baseBounds.width + width, workArea.width)
+    const targetX = Math.max(workArea.x, Math.min(baseBounds.x, workArea.x + workArea.width - targetWidth))
+
+    mainWindow.setBounds({
+      x: targetX,
+      y: baseBounds.y,
+      width: targetWidth,
+      height: baseBounds.height
+    })
+
+    return { success: true }
+  }
+
+  if (toolDockBaseBounds) {
+    mainWindow.setBounds(toolDockBaseBounds)
+    toolDockBaseBounds = null
+  }
+
+  return { success: true }
+})
 registerFsHandlers()
 registerPortForwardHandlers()
 registerSnippetHandlers()
@@ -129,6 +168,7 @@ registerVNCHandlers()
 registerSyncHandlers()
 registerQuickCommandHandlers()
 registerLazyScriptHandlers()
+registerDockerHandlers()
 registerTerminalBackgroundHandlers()
 
 function createWindow() {

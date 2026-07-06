@@ -148,7 +148,7 @@
     <el-dialog v-model="showUseDialog" title="使用模板创建转发" width="500px">
       <el-form label-width="120px">
         <el-form-item label="选择连接">
-          <el-select v-model="selectedConnectionId" placeholder="选择SSH连接" style="width: 100%">
+          <el-select v-model="selectedSessionId" placeholder="选择SSH连接" style="width: 100%">
             <el-option
               v-for="session in sessions"
               :key="session.id"
@@ -203,7 +203,7 @@ const showCreateDialog = ref(false)
 const showUseDialog = ref(false)
 const editingTemplate = ref<PortForwardTemplate | null>(null)
 const selectedTemplate = ref<PortForwardTemplate | null>(null)
-const selectedConnectionId = ref('')
+const selectedSessionId = ref('')
 const formRef = ref()
 
 const form = ref({
@@ -371,12 +371,12 @@ const handleSave = async () => {
 
 const handleUseTemplate = (template: PortForwardTemplate) => {
   selectedTemplate.value = template
-  selectedConnectionId.value = ''
+  selectedSessionId.value = ''
   showUseDialog.value = true
 }
 
 const confirmUseTemplate = async () => {
-  if (!selectedTemplate.value || !selectedConnectionId.value) {
+  if (!selectedTemplate.value || !selectedSessionId.value) {
     ElMessage.warning('请选择连接')
     return
   }
@@ -384,7 +384,7 @@ const confirmUseTemplate = async () => {
   try {
     const result = await window.electronAPI.portForward.createFromTemplate(
       selectedTemplate.value.id,
-      selectedConnectionId.value
+      selectedSessionId.value
     )
 
     if (result.success) {

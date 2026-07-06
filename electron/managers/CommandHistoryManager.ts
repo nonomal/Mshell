@@ -14,6 +14,20 @@ export interface CommandHistory {
   favorite: boolean
 }
 
+export interface CommandHistoryStatistics {
+  totalCommands: number
+  uniqueCommands: number
+  favoritesCount: number
+  sessionsCount: number
+  todayCount: number
+}
+
+export interface CommandHistoryPanelData {
+  history: CommandHistory[]
+  statistics: CommandHistoryStatistics
+  mostUsedCommands: Array<{ command: string; count: number }>
+}
+
 /**
  * CommandHistoryManager - 管理命令历史
  */
@@ -121,6 +135,54 @@ export class CommandHistoryManager extends BaseManager<CommandHistory> {
       .map(([command, count]) => ({ command, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, limit)
+  }
+
+  /**
+   * 获取命令历史面板所需数据。
+   * 一次扫描内存数据，避免打开面板时多次 getAll/filter/sort。
+   */
+  getPanelData(limit: number = 300, mostUsedLimit: number = 10): CommandHistoryPanelData {
+    const all = this.getAll()
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const todayStart = today.getTime()
+
+    const uniqueCommands = new Set<string>()
+    const sessions = new Set<string>()
+    const commandCounts = new Map<string, number>()
+    let favoritesCount = 0
+    let todayCount = 0
+
+    for (const item of all) {
+      uniqueCommands.add(item.command)
+      sessions.add(item.sessionId)
+
+      if (item.favorite) favoritesCount += 1
+      if (new Date(item.timestamp).getTime() >= todayStart) todayCount += 1
+
+      commandCounts.set(item.command, (commandCounts.get(item.command) || 0) + 1)
+    }
+
+    const history = [...all]
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, limit)
+
+    const mostUsedCommands = Array.from(commandCounts.entries())
+      .map(([command, count]) => ({ command, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, mostUsedLimit)
+
+    return {
+      history,
+      statistics: {
+        totalCommands: all.length,
+        uniqueCommands: uniqueCommands.size,
+        favoritesCount,
+        sessionsCount: sessions.size,
+        todayCount
+      },
+      mostUsedCommands
+    }
   }
 
   /**
@@ -234,13 +296,7 @@ export class CommandHistoryManager extends BaseManager<CommandHistory> {
   /**
    * 获取统计信息
    */
-  getStatistics(): {
-    totalCommands: number
-    uniqueCommands: number
-    favoritesCount: number
-    sessionsCount: number
-    todayCount: number
-  } {
+  getStatistics(): CommandHistoryStatistics {
     const all = this.getAll()
     const uniqueCommands = new Set(all.map(h => h.command)).size
     const favoritesCount = all.filter(h => h.favorite).length

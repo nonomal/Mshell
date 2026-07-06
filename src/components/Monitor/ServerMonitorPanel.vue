@@ -13,6 +13,9 @@
         <button @click="refreshMetrics" class="btn-refresh" :disabled="!isMonitoring" title="刷新">
           🔄
         </button>
+        <button @click="$emit('close')" class="btn-close" title="关闭监控">
+          ×
+        </button>
       </div>
     </div>
 
@@ -171,6 +174,9 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+defineEmits<{
+  close: []
+}>()
 
 const isMonitoring = ref(false)
 const metrics = ref<any>(null)
@@ -304,7 +310,8 @@ onUnmounted(() => {
 }
 
 .btn-toggle,
-.btn-refresh {
+.btn-refresh,
+.btn-close {
   padding: 4px 10px;
   border: 1px solid var(--border-color);
   border-radius: 4px;
@@ -329,6 +336,12 @@ onUnmounted(() => {
 .btn-refresh:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn-close:hover {
+  background: var(--error-color);
+  border-color: var(--error-color);
+  color: white;
 }
 
 .monitor-empty,
@@ -587,7 +600,8 @@ onUnmounted(() => {
 }
 
 :global(:root.app-appearance-terminal .server-monitor-panel .btn-toggle),
-:global(:root.app-appearance-terminal .server-monitor-panel .btn-refresh) {
+:global(:root.app-appearance-terminal .server-monitor-panel .btn-refresh),
+:global(:root.app-appearance-terminal .server-monitor-panel .btn-close) {
   width: 40px;
   height: 28px;
   min-width: 40px;
@@ -612,6 +626,12 @@ onUnmounted(() => {
   background: rgba(var(--primary-color-rgb), 0.12);
   border-color: var(--terminal-line);
   color: var(--primary-light);
+}
+
+:global(:root.app-appearance-terminal .server-monitor-panel .btn-close:hover) {
+  background: var(--error-color);
+  border-color: var(--error-color);
+  color: var(--text-inverse);
 }
 
 :global(:root.app-appearance-terminal .server-monitor-panel .btn-refresh:disabled) {
